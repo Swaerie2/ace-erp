@@ -2,7 +2,9 @@
 
 import {
   addContact,
+  addProperty,
   archiveCustomer,
+  archiveProperty,
   contactSchema,
   createCustomer,
   customerSchema,
@@ -13,6 +15,7 @@ import {
   restoreCustomer,
   updateContact,
   updateCustomer,
+  updateProperty,
 } from "@ace/core";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -171,4 +174,42 @@ export async function removeContactAction(formData: FormData): Promise<void> {
       ? `/customers/${customerId}?tab=contacts&error=${encodeURIComponent(notice)}`
       : `/customers/${customerId}?tab=contacts`,
   );
+}
+
+export async function savePropertyAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const values = formValues(formData);
+  const customerId = idSchema.safeParse(values.customerId);
+  if (!customerId.success)
+    return { error: "Something went wrong. Refresh the page and try again." };
+  const propertyId = values.propertyId ? idSchema.safeParse(values.propertyId) : null;
+  if (propertyId && !propertyId.success)
+    return { error: "Something went wrong. Refresh the page and try again." };
+
+  const parsed = propertySchema.safeParse(values);
+  if (!parsed.success) return { fieldErrors: errorsFrom(parsed.error), values, nonce: Date.now() };
+
+  try {
+    await inTx(async (tx) => {
+      if (propertyId?.success) await updateProperty(tx, actor, propertyId.data, parsed.data);
+      else await addProperty(tx, actor, customerId.data, parsed.data);
+    });
+  } catch (error) {
+    return failure(error, values);
+  }
+  redirect(`/customers/${customerId.data}?tab=properties`);
+}
+
+export async function archivePropertyAction(formData: FormData): Promise<void> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const propertyId = idSchema.parse(formData.get("propertyId"));
+  const customerId = idSchema.parse(formData.get("customerId"));
+  try {
+    await inTx((tx) => archiveProperty(tx, actor, propertyId));
+  } catch (error) {
+    failure(error);
+  }
+  redirect(`/customers/${customerId}?tab=properties`);
 }
