@@ -413,11 +413,13 @@ git commit -m "Add customer, contact and property tables with protections" -m "C
 
 **Files:**
 
-- Create: `packages/core/src/customers/phone.ts`, `phone.test.ts`, `number.ts`, `number.test.ts`, `schemas.ts`, `schemas.test.ts`, `views.ts`, `views.test.ts`
+- Create: `packages/core/src/customers/phone.ts`, `phone.test.ts`, `number.ts`, `number.test.ts`, `schemas.ts`, `schemas.test.ts`, `views.ts`, `views.test.ts`, `client.ts`
+- Modify: `packages/core/package.json` (add the `./client` export, see Step 3)
 
 **Interfaces:**
 
 - Produces:
+  - **`@ace/core/client`**: a browser-safe entry (no database code) that re-exports ONLY `CUSTOMER_SOURCES`, `SERVICE_FREQUENCIES`, `WEEKDAYS`, `formatCentsForInput`, `formatCustomerNumber`, `normalisePhone`. Client components (`"use client"` files and anything they import) must import from here, never from `@ace/core`.
   - `normalisePhone(input: string): string | null`
   - `formatCustomerNumber(n: number): string`, `parseCustomerNumber(s: string): number | null`
   - `parseRandToCents(input: string): number | null`, `formatCentsForInput(cents: number): string`
@@ -648,6 +650,23 @@ Run: `cd packages/core && npx vitest run src/customers`
 Expected: FAIL (modules not found).
 
 - [ ] **Step 3: Write the implementations**
+
+`client.ts` (the browser-safe entry; it must import nothing that touches the database, so it only re-exports from the pure files below):
+
+```ts
+export { formatCustomerNumber } from "./number";
+export { normalisePhone } from "./phone";
+export { CUSTOMER_SOURCES, SERVICE_FREQUENCIES, WEEKDAYS, formatCentsForInput } from "./schemas";
+```
+
+In `packages/core/package.json`, add a second entry to `exports` (keep `"."`):
+
+```json
+"exports": {
+  ".": "./src/index.ts",
+  "./client": "./src/customers/client.ts"
+}
+```
 
 `phone.ts`:
 
@@ -2409,7 +2428,7 @@ git commit -m "Add staff shell and customer list with search" -m "Co-Authored-By
 `_components/customer-fields.tsx`:
 
 ```tsx
-import { CUSTOMER_SOURCES } from "@ace/core";
+import { CUSTOMER_SOURCES } from "@ace/core/client";
 import { CheckboxField, SelectField, TextAreaField, TextField } from "@/components/form";
 
 type Props = { values: Record<string, string>; errors: Record<string, string>; editing?: boolean };
@@ -2611,12 +2630,12 @@ export function ContactFields({ values: v, errors: e, prefix = "" }: Props) {
         <CheckboxField
           label="Receives quotes"
           name={n("receivesQuotes")}
-          defaultChecked={v[n("receivesQuotes")] ? v[n("receivesQuotes")] === "on" : true}
+          defaultChecked={v[n("receivesQuotes")] === "on"}
         />
         <CheckboxField
           label="Receives invoices"
           name={n("receivesInvoices")}
-          defaultChecked={v[n("receivesInvoices")] ? v[n("receivesInvoices")] === "on" : true}
+          defaultChecked={v[n("receivesInvoices")] === "on"}
         />
         <CheckboxField
           label="Can use the client portal"
@@ -2630,12 +2649,14 @@ export function ContactFields({ values: v, errors: e, prefix = "" }: Props) {
 }
 ```
 
-Note: for an unticked checkbox the key is absent, so "unset" cannot be told from "unchecked" after a failed save; the `? ... : true` default only applies to a brand-new form (no `values`). To keep a deliberate untick after an error, `failure()` callers always pass `values`, and the form re-renders with `values` populated; an absent `receivesQuotes` key then means unchecked. Handle this by having each form pass `values={state.values ?? initial}` where `initial` for a new form is `{ receivesQuotes: "on", receivesInvoices: "on" }` (see Step 3) and change the two lines above to `defaultChecked={v[n("receivesQuotes")] === "on"}`.
+Note: an unticked checkbox sends no key at all, so the checkboxes here read `=== "on"`. A brand-new form therefore passes initial values with the two "receives" boxes already `"on"` (see `INITIAL` in Step 3), and after a failed save the typed `values` (where a missing key means unticked) are passed back in.
+
+**Client-safe imports (binding for every file in this task that has `"use client"` or is imported by one):** import values from `@ace/core/client`, never from `@ace/core`. The `@ace/core` barrel pulls in the database code (Prisma, `pg`, `node:crypto`), which must never reach the browser bundle. `@ace/core/client` is created in Task 2.
 
 `_components/property-fields.tsx`:
 
 ```tsx
-import { SERVICE_FREQUENCIES, WEEKDAYS } from "@ace/core";
+import { SERVICE_FREQUENCIES, WEEKDAYS } from "@ace/core/client";
 import { CheckboxField, SelectField, TextAreaField, TextField } from "@/components/form";
 
 type Props = { values: Record<string, string>; errors: Record<string, string>; prefix?: string };
@@ -2871,7 +2892,7 @@ export default async function NewCustomerPage() {
 ```tsx
 "use client";
 
-import { formatCustomerNumber } from "@ace/core";
+import { formatCustomerNumber } from "@ace/core/client";
 import Link from "next/link";
 import { useActionState } from "react";
 import { buttonClass } from "@/components/auth-card";
@@ -3421,7 +3442,7 @@ Add `error?: string` to the `Search` type in `[id]/page.tsx` and pass `notice={s
 ```tsx
 "use client";
 
-import { formatCustomerNumber } from "@ace/core";
+import { formatCustomerNumber } from "@ace/core/client";
 import Link from "next/link";
 import { useActionState } from "react";
 import { buttonClass } from "@/components/auth-card";
@@ -3673,7 +3694,7 @@ export async function archivePropertyAction(formData: FormData): Promise<void> {
 ```tsx
 "use client";
 
-import { formatCentsForInput } from "@ace/core";
+import { formatCentsForInput } from "@ace/core/client";
 import Link from "next/link";
 import { useActionState } from "react";
 import { buttonClass } from "@/components/auth-card";
