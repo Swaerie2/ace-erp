@@ -7,7 +7,13 @@ import { fileURLToPath } from "node:url";
 import { config } from "dotenv";
 
 const here = dirname(fileURLToPath(import.meta.url));
-config({ path: join(here, "..", "..", "..", ".env.local") });
+// override: a DATABASE_URL already exported in the shell must never win over the dev settings.
+const envFile = join(here, "..", "..", "..", ".env.local");
+const loaded = config({ path: envFile, override: true });
+if (loaded.error) {
+  console.error("Cannot run database tests: the root .env.local could not be read.");
+  process.exit(1);
+}
 
 const require = createRequire(import.meta.url);
 const vitestBin = join(dirname(require.resolve("vitest/package.json")), "vitest.mjs");

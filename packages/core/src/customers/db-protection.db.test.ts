@@ -10,7 +10,7 @@ describe.skipIf(!dbTestsEnabled)("customers database protections", () => {
       const res = await fetch(`${url}/rest/v1/${table}?select=*`, {
         headers: { apikey: key!, Authorization: `Bearer ${key}` },
       });
-      expect([401, 403, 404]).toContain(res.status);
+      expect([401, 403]).toContain(res.status);
     }
   });
 
@@ -24,13 +24,13 @@ describe.skipIf(!dbTestsEnabled)("customers database protections", () => {
           data: { customerId: customer.id, name: "X", email: "UPPER@Example.com" },
         });
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/contacts_email_lowercase/);
   });
 
   it("rejects a blank customer name and a negative fee", async () => {
     await expect(
       withRollback((tx) => tx.customer.create({ data: { type: "PERSON", displayName: "   " } })),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/customers_display_name_not_blank/);
     await expect(
       withRollback(async (tx) => {
         const c = await tx.customer.create({ data: { type: "PERSON", displayName: "Fee Test" } });
@@ -43,7 +43,18 @@ describe.skipIf(!dbTestsEnabled)("customers database protections", () => {
           },
         });
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/properties_fee_not_negative/);
+  });
+
+  it("rejects a negative lawn size", async () => {
+    await expect(
+      withRollback(async (tx) => {
+        const c = await tx.customer.create({ data: { type: "PERSON", displayName: "Lawn Test" } });
+        await tx.property.create({
+          data: { customerId: c.id, label: "x", addressLine1: "1 Test St", lawnSizeSqm: -1 },
+        });
+      }),
+    ).rejects.toThrow(/properties_lawn_not_negative/);
   });
 
   it("numbers customers upwards", async () => {
