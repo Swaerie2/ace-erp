@@ -15,16 +15,19 @@
     "db:validate": "prisma validate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "staff:create": "tsx scripts/create-staff.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",
     "@prisma/client": "7.10.1",
+    "@supabase/supabase-js": "^2.119.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "dotenv": "^18.0.10",
     "prisma": "7.10.1",
+    "tsx": "^4.23.15",
     "vitest": "^5.1.1"
   }
 }

@@ -21,9 +21,22 @@ The public website (`www.acegardens.co.za`) is a separate project and is not tou
 1. Install Node 22 or newer.
 2. `npm install` (this also builds the database client).
 3. Copy `.env.example` to `.env.local` and fill in your values. **Never commit `.env.local`.**
-4. `npm run db:migrate` to create the tables in your development database.
-5. `npm run dev:admin` (http://localhost:3100) or `npm run dev:portal` (http://localhost:3200).
+4. `npm run db:deploy` to create the tables in your development database.
+5. Create the owner account: `npm run staff:create`. It asks for the email, first name and
+   role, then asks for a password (typed twice, hidden). Run it yourself in your own terminal so
+   the password never passes through anyone else.
+6. `npm run dev:admin` (http://localhost:3100) or `npm run dev:portal` (http://localhost:3200).
    Run one at a time on a low-memory computer.
+7. First sign-in: email and password, then scan the QR code with an authenticator app and type the
+   6-digit code. Every sign-in after that asks for the current 6-digit code.
+
+### Settings to change in the Supabase dashboard
+
+- **Authentication, Sign In / Providers:** turn **off** "Allow new users to sign up". Staff accounts
+  are only created with `npm run staff:create`, so public sign-up must stay closed.
+- **Authentication, Attack Protection:** leave rate limits on; raise the minimum password length
+  to 12 or more.
+- Before go-live: connect a custom email sender (Resend) so client codes come from ACE.
 
 ## Everyday commands
 

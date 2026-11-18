@@ -23,7 +23,8 @@
     "db:validate": "npm run db:validate -w @ace/core",
     "db:migrate": "npm run db:migrate -w @ace/core",
     "db:deploy": "npm run db:deploy -w @ace/core",
-    "check": "npm run db:generate && npm run typecheck && npm run lint && npm run test && npm run format:check"
+    "check": "npm run db:generate && npm run typecheck && npm run lint && npm run test && npm run format:check",
+    "staff:create": "npm run staff:create -w @ace/core"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

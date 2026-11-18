@@ -71,6 +71,19 @@ These apply to every module. A module is not finished until it follows all of th
 9. **Breach plan.** If personal information is exposed, the Information Regulator and affected
    people must be told. The owner is responsible for registering an Information Officer.
 
+## Staff sign-in (Module 0b)
+
+- Two steps every time: email and password, then a 6-digit code from an authenticator app (TOTP).
+  A session without the second step (`aal1`) is refused everywhere; each page and action checks
+  this itself, not just the redirect in `proxy.ts`.
+- A staff member needs both a sign-in account and an active row in `staff_users`. Having only the
+  sign-in account is not enough, and deactivating the row locks them out.
+- Failed attempts show one generic message, so nobody can learn which emails have accounts.
+- Sign-ins, failures, denials, code failures and sign-outs go to the audit log. Passwords and codes
+  are never recorded.
+- Accounts are created only by `npm run staff:create` (and later by an owner inside the app).
+  Public sign-up is switched off in Supabase.
+
 ## Working agreement
 
 - Small steps. One module at a time. Nothing goes live without the owner approving it.

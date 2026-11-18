@@ -5,4 +5,7 @@ export { recordAudit } from "./audit";
 export type { AuditEntry } from "./audit";
 export { computeTotals, formatZAR, randToCents, sumCents } from "./money";
 export type { Cents, Totals, VatSettings } from "./money";
+export { getSupabaseAdmin } from "./supabase-admin";
+export { createStaffUser, createStaffInput, MIN_PASSWORD_LENGTH } from "./staff";
+export type { CreateStaffInput } from "./staff";
 export { AuditActorType, StaffRole } from "./generated/prisma/enums";

@@ -35,3 +35,6 @@ Thumbs.db
 .vscode/
 .idea/
 .claude/settings.local.json
+
+# written automatically by `next dev` for AI coding tools; not part of our project
+apps/*/AGENTS.md
