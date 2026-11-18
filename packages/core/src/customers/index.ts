@@ -5,6 +5,7 @@ export * from "./duplicates";
 export * from "./mappers";
 export * from "./number";
 export * from "./phone";
+export * from "./privacy";
 export * from "./properties";
 export * from "./schemas";
 export * from "./store";
