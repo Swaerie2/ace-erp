@@ -1,11 +1,16 @@
 import { CUSTOMER_SOURCES } from "@ace/core/client";
 import { CheckboxField, SelectField, TextAreaField, TextField } from "@/components/form";
 
-type Props = { values: Record<string, string>; errors: Record<string, string>; editing?: boolean };
+type Props = {
+  values: Record<string, string>;
+  errors: Record<string, string>;
+  /** Focus the Name box on mount. Only for a brand-new form, never after a response. */
+  autoFocus?: boolean;
+};
 
 const label = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
 
-export function CustomerFields({ values: v, errors: e, editing }: Props) {
+export function CustomerFields({ values: v, errors: e, autoFocus = false }: Props) {
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
@@ -37,7 +42,7 @@ export function CustomerFields({ values: v, errors: e, editing }: Props) {
         required
         defaultValue={v.displayName}
         error={e.displayName}
-        autoFocus={!editing}
+        autoFocus={autoFocus}
       />
       <div className="grid gap-4 sm:grid-cols-2">
         <TextField

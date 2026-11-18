@@ -2,7 +2,7 @@
 
 import { formatCustomerNumber } from "@ace/core/client";
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef } from "react";
 import { buttonClass } from "@/components/auth-card";
 import { FormMessage } from "@/components/form";
 import { ContactFields } from "../_components/contact-fields";
@@ -21,11 +21,27 @@ export function NewCustomerForm() {
   const [state, action, pending] = useActionState(createCustomerAction, undefined);
   const values = state?.values ?? INITIAL;
   const errors = state?.fieldErrors ?? {};
+  const formRef = useRef<HTMLFormElement>(null);
+
+  // After each response, bring the message into view and move focus to it, so the
+  // remount of the fields does not leave the user at the top of the page.
+  useEffect(() => {
+    if (state?.nonce === undefined) return;
+    const form = formRef.current;
+    if (!form) return;
+    // The duplicate warning or the form-level error: direct children of the form.
+    const box = form.querySelector<HTMLElement>(":scope > [role='alert']");
+    const target = box ?? form.querySelector<HTMLElement>("[aria-invalid='true']");
+    if (!target) return;
+    if (box) box.tabIndex = -1;
+    target.focus();
+    target.scrollIntoView({ block: "center" });
+  }, [state?.nonce]);
 
   return (
-    <form action={action} className="mt-6 space-y-8">
+    <form ref={formRef} action={action} className="mt-6 space-y-8">
       <div key={state?.nonce ?? "initial"} className="space-y-8">
-        <CustomerFields values={values} errors={errors} />
+        <CustomerFields values={values} errors={errors} autoFocus={state === undefined} />
         <section className="space-y-4">
           <h2 className="font-display text-lg font-semibold text-forest">First contact</h2>
           <ContactFields values={values} errors={errors} prefix="contact_" />
