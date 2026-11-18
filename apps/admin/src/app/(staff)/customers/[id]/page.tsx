@@ -4,10 +4,11 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 import { toActor } from "@/lib/actor";
 import { requireStaff } from "@/lib/auth";
+import { ContactsTab } from "./contacts-tab";
 import { CrewView } from "./crew-view";
 import { OverviewTab } from "./overview-tab";
 
-type Search = { tab?: string; edit?: string; add?: string };
+type Search = { tab?: string; edit?: string; add?: string; error?: string };
 const TABS = ["overview", "contacts", "properties", "activity"] as const;
 type Tab = (typeof TABS)[number];
 
@@ -71,6 +72,8 @@ export default async function CustomerPage({
             editing={sp.edit === "1"}
             isOwner={staff.role === "OWNER"}
           />
+        ) : tab === "contacts" ? (
+          <ContactsTab customer={customer} edit={sp.edit} add={sp.add === "1"} notice={sp.error} />
         ) : (
           <p className="text-charcoal/60">This section is built in a later step.</p>
         )}

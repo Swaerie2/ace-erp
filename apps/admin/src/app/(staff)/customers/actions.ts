@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  addContact,
   archiveCustomer,
   contactSchema,
   createCustomer,
@@ -8,7 +9,9 @@ import {
   findDuplicateContacts,
   inTx,
   propertySchema,
+  removeContact,
   restoreCustomer,
+  updateContact,
   updateCustomer,
 } from "@ace/core";
 import { redirect } from "next/navigation";
@@ -113,4 +116,59 @@ export async function restoreCustomerAction(formData: FormData): Promise<void> {
     failure(error);
   }
   redirect(`/customers/${id}`);
+}
+
+export async function saveContactAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const values = formValues(formData);
+  const customerId = idSchema.safeParse(values.customerId);
+  if (!customerId.success)
+    return { error: "Something went wrong. Refresh the page and try again." };
+  const contactId = values.contactId ? idSchema.safeParse(values.contactId) : null;
+  if (contactId && !contactId.success)
+    return { error: "Something went wrong. Refresh the page and try again." };
+
+  const parsed = contactSchema.safeParse(values);
+  if (!parsed.success) return { fieldErrors: errorsFrom(parsed.error), values, nonce: Date.now() };
+
+  try {
+    const outcome = await inTx(async (tx) => {
+      if (values.confirmDuplicates !== "1") {
+        const duplicates = await findDuplicateContacts(tx, actor, {
+          emails: parsed.data.email ? [parsed.data.email] : [],
+          phones: parsed.data.phone ? [parsed.data.phone] : [],
+          excludeCustomerId: customerId.data,
+        });
+        if (duplicates.length > 0) return { duplicates } as const;
+      }
+      if (contactId?.success) await updateContact(tx, actor, contactId.data, parsed.data);
+      else await addContact(tx, actor, customerId.data, parsed.data);
+      return { saved: true } as const;
+    });
+    if ("duplicates" in outcome)
+      return { duplicates: outcome.duplicates, values, nonce: Date.now() };
+  } catch (error) {
+    return failure(error, values);
+  }
+  redirect(`/customers/${customerId.data}?tab=contacts`);
+}
+
+export async function removeContactAction(formData: FormData): Promise<void> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const contactId = idSchema.parse(formData.get("contactId"));
+  const customerId = idSchema.parse(formData.get("customerId"));
+  let notice: string | undefined;
+  try {
+    await inTx((tx) => removeContact(tx, actor, contactId));
+  } catch (error) {
+    // e.g. "A customer needs at least one contact." Show it on the page.
+    notice = failure(error)?.error ?? "Could not remove that contact.";
+  }
+  redirect(
+    notice
+      ? `/customers/${customerId}?tab=contacts&error=${encodeURIComponent(notice)}`
+      : `/customers/${customerId}?tab=contacts`,
+  );
 }
