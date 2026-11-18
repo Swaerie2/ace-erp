@@ -2,9 +2,10 @@
 
 import { formatCustomerNumber } from "@ace/core/client";
 import Link from "next/link";
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useRef } from "react";
 import { buttonClass } from "@/components/auth-card";
 import { FormMessage } from "@/components/form";
+import { useFocusOnFeedback } from "@/lib/use-focus-on-feedback";
 import { ContactFields } from "../_components/contact-fields";
 import { CustomerFields } from "../_components/customer-fields";
 import { PropertyFields } from "../_components/property-fields";
@@ -23,20 +24,7 @@ export function NewCustomerForm() {
   const errors = state?.fieldErrors ?? {};
   const formRef = useRef<HTMLFormElement>(null);
 
-  // After each response, bring the message into view and move focus to it, so the
-  // remount of the fields does not leave the user at the top of the page.
-  useEffect(() => {
-    if (state?.nonce === undefined) return;
-    const form = formRef.current;
-    if (!form) return;
-    // The duplicate warning or the form-level error: direct children of the form.
-    const box = form.querySelector<HTMLElement>(":scope > [role='alert']");
-    const target = box ?? form.querySelector<HTMLElement>("[aria-invalid='true']");
-    if (!target) return;
-    if (box) box.tabIndex = -1;
-    target.focus();
-    target.scrollIntoView({ block: "center" });
-  }, [state?.nonce]);
+  useFocusOnFeedback(formRef, state?.nonce);
 
   return (
     <form ref={formRef} action={action} className="mt-6 space-y-8">

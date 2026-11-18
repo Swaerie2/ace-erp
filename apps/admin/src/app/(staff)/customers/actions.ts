@@ -1,14 +1,18 @@
 "use server";
 
 import {
+  archiveCustomer,
   contactSchema,
   createCustomer,
   customerSchema,
   findDuplicateContacts,
   inTx,
   propertySchema,
+  restoreCustomer,
+  updateCustomer,
 } from "@ace/core";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 import { toActor } from "@/lib/actor";
 import { requireStaff } from "@/lib/auth";
 import { errorsFrom, failure, formValues, withPrefix, type FormState } from "@/lib/form";
@@ -59,6 +63,54 @@ export async function createCustomerAction(
     id = result.id;
   } catch (error) {
     return failure(error, values);
+  }
+  redirect(`/customers/${id}`);
+}
+
+const idSchema = z.uuid();
+
+export async function updateCustomerAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const values = formValues(formData);
+  const id = idSchema.safeParse(values.id);
+  if (!id.success) return { error: "Something went wrong. Refresh the page and try again." };
+
+  const customer = customerSchema.safeParse(values);
+  if (!customer.success)
+    return { fieldErrors: errorsFrom(customer.error), values, nonce: Date.now() };
+
+  try {
+    await inTx((tx) => updateCustomer(tx, actor, id.data, customer.data));
+  } catch (error) {
+    return failure(error, values);
+  }
+  redirect(`/customers/${id.data}`);
+}
+
+export async function archiveCustomerAction(formData: FormData): Promise<void> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const id = idSchema.parse(formData.get("id"));
+  try {
+    await inTx((tx) => archiveCustomer(tx, actor, id));
+  } catch (error) {
+    failure(error);
+  }
+  redirect(`/customers/${id}`);
+}
+
+export async function restoreCustomerAction(formData: FormData): Promise<void> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const id = idSchema.parse(formData.get("id"));
+  try {
+    await inTx((tx) => restoreCustomer(tx, actor, id));
+  } catch (error) {
+    failure(error);
   }
   redirect(`/customers/${id}`);
 }
