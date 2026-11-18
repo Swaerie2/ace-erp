@@ -1,0 +1,85 @@
+// ACE Garden Services: core database schema.
+//
+// Module 0 (foundation) only: organisation settings, staff users, audit log.
+// Customers arrive in Module 1, services in Module 2, quotes in Module 3, and so on.
+//
+// Rules for every future model:
+//   * Money is stored as whole cents (Int), never floats.
+//   * Tables are private by default: Row Level Security is enabled in the migration,
+//     so the public database API can never read them. Only our server code can.
+//   * Changes to important records are written to AuditLog.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum StaffRole {
+  OWNER
+  MANAGER
+  CREW
+}
+
+enum AuditActorType {
+  STAFF
+  CUSTOMER
+  SYSTEM
+}
+
+/// Exactly one row (id = "singleton"). Business-wide settings.
+model OrganisationSettings {
+  id            String   @id @default("singleton")
+  tradingName   String
+  legalName     String
+  currency      String   @default("ZAR")
+  /// ACE is not VAT registered. The switch exists so VAT can be turned on later
+  /// without rebuilding anything. While false, no VAT appears anywhere.
+  vatEnabled    Boolean  @default(false)
+  /// VAT rate in basis points (1500 = 15%). Ignored while vatEnabled is false.
+  vatRateBps    Int      @default(0)
+  quotePrefix   String   @default("Q")
+  invoicePrefix String   @default("INV")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("organisation_settings")
+}
+
+/// A person who can sign in to the staff app.
+/// `id` is the same value as the user's id in the sign-in system, so the two always match.
+model StaffUser {
+  id          String    @id @db.Uuid
+  email       String    @unique
+  name        String
+  role        StaffRole
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  lastLoginAt DateTime?
+
+  @@map("staff_users")
+}
+
+/// Append-only record of who did what. Never updated, never deleted.
+model AuditLog {
+  id         String         @id @default(uuid()) @db.Uuid
+  at         DateTime       @default(now())
+  actorType  AuditActorType
+  actorId    String?
+  action     String
+  entityType String?
+  entityId   String?
+  before     Json?
+  after      Json?
+  ip         String?
+  userAgent  String?
+
+  @@index([entityType, entityId])
+  @@index([actorType, actorId])
+  @@index([at])
+  @@map("audit_log")
+}

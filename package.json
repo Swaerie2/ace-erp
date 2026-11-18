@@ -1,0 +1,35 @@
+{
+  "name": "ace-erp",
+  "private": true,
+  "version": "0.0.0",
+  "description": "ACE Garden Services: staff app, client portal and shared core.",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:admin": "npm run dev -w @ace/admin",
+    "dev:portal": "npm run dev -w @ace/portal",
+    "build": "npm run build -w @ace/admin && npm run build -w @ace/portal",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "test": "npm run test --workspaces --if-present",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "npm run db:generate -w @ace/core",
+    "db:validate": "npm run db:validate -w @ace/core",
+    "db:migrate": "npm run db:migrate -w @ace/core",
+    "db:deploy": "npm run db:deploy -w @ace/core",
+    "check": "npm run db:generate && npm run typecheck && npm run lint && npm run test && npm run format:check"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "16.4.6",
+    "prettier": "^3.10.1",
+    "typescript": "~5.9.3"
+  }
+}

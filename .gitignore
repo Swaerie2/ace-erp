@@ -1,0 +1,37 @@
+# dependencies
+node_modules/
+
+# builds and caches
+.next/
+out/
+build/
+dist/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+.turbo/
+.vercel/
+
+# generated code (recreated by `npm run db:generate`)
+packages/core/src/generated/
+
+# secrets and local settings: NEVER commit these
+.env
+.env.*
+!.env.example
+
+# real data must never live in git
+*.csv
+*.xlsx
+data/private/
+
+# logs and OS junk
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# editor and tool settings
+.vscode/
+.idea/
+.claude/settings.local.json
