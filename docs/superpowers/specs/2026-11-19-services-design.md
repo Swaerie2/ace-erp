@@ -1,6 +1,6 @@
 # Module 2: Services catalogue (design)
 
-Status: Draft for owner review. Date: 2026-11-19.
+Status: Implemented and verified (branch module-2-services); awaiting owner merge. Date: 2026-11-19.
 
 ## Goal
 
@@ -34,28 +34,28 @@ from `anon` and `authenticated`, only server code reads or writes.
 
 ### services
 
-| Field                | Notes                                                                                    |
-| -------------------- | ---------------------------------------------------------------------------------------- |
-| id                   | uuid                                                                                     |
-| name                 | required, max 80 characters, unique ignoring case (including switched-off services)      |
-| description          | required, max 300 characters; the scope wording the client reads on a quote              |
-| kind                 | `CORE` or `OPTIONAL_EXTRA`                                                               |
-| sortOrder            | whole number; the order services appear in on quotes. New services go to the end         |
-| archivedAt           | null while on; set when switched off. Services are never deleted                         |
-| createdAt, updatedAt |                                                                                          |
+| Field                | Notes                                                                               |
+| -------------------- | ----------------------------------------------------------------------------------- |
+| id                   | uuid                                                                                |
+| name                 | required, max 80 characters, unique ignoring case (including switched-off services) |
+| description          | required, max 300 characters; the scope wording the client reads on a quote         |
+| kind                 | `CORE` or `OPTIONAL_EXTRA`                                                          |
+| sortOrder            | whole number; the order services appear in on quotes. New services go to the end    |
+| archivedAt           | null while on; set when switched off. Services are never deleted                    |
+| createdAt, updatedAt |                                                                                     |
 
 Seed rows, inserted by the migration so a fresh live database starts with them (editable in the
 app afterwards):
 
-| Order | Name                           | Kind            | Description                                                         |
-| ----- | ------------------------------ | --------------- | ------------------------------------------------------------------- |
-| 1     | Lawn Mowing & Edging           | CORE            | Mowing, edging along paths and beds, and clearing of cut grass.     |
-| 2     | Garden Maintenance             | CORE            | Weed control, pruning, planting and bed care.                       |
-| 3     | Hedge & Shrub Trimming         | CORE            | Shaping and trimming of hedges and shrubs.                          |
-| 4     | Seasonal Clean-Ups             | CORE            | Leaf removal, debris clearing and garden refreshes.                 |
-| 5     | Commercial & Complex Contracts | CORE            | Tailored maintenance plans for complexes, HOAs and business parks.  |
-| 6     | Waste Removal                  | CORE            | Removal of garden waste from site.                                  |
-| 7     | Weed Treatment                 | OPTIONAL_EXTRA  | Treatment to control weeds in lawns and beds.                       |
+| Order | Name                           | Kind           | Description                                                        |
+| ----- | ------------------------------ | -------------- | ------------------------------------------------------------------ |
+| 1     | Lawn Mowing & Edging           | CORE           | Mowing, edging along paths and beds, and clearing of cut grass.    |
+| 2     | Garden Maintenance             | CORE           | Weed control, pruning, planting and bed care.                      |
+| 3     | Hedge & Shrub Trimming         | CORE           | Shaping and trimming of hedges and shrubs.                         |
+| 4     | Seasonal Clean-Ups             | CORE           | Leaf removal, debris clearing and garden refreshes.                |
+| 5     | Commercial & Complex Contracts | CORE           | Tailored maintenance plans for complexes, HOAs and business parks. |
+| 6     | Waste Removal                  | CORE           | Removal of garden waste from site.                                 |
+| 7     | Weed Treatment                 | OPTIONAL_EXTRA | Treatment to control weeds in lawns and beds.                      |
 
 The existing property fields `agreedMonthlyFeeCents` and `extrasNote` (and the property
 `frequency`) are **left untouched** in this module. Module 3 replaces them with the accepted
@@ -70,7 +70,7 @@ quote's lines, in a migration written and approved then, keeping the amount hist
   staff under a toggle, and can be switched back on. Nothing that already used the service changes.
 - Editing a name or description affects future quotes only. Quotes will store their own copy of the
   wording (Module 3), so history never changes.
-- Reordering swaps a service with its neighbour (up or down). Order values stay contiguous.
+- Reordering swaps a switched-on service with its neighbour (up or down) and renumbers the switched-on services 1, 2, 3 and so on. Two services added at the same moment may briefly share a number; ties are broken by when they were added, so the order is always well defined. A service switched back on goes to the end of the list.
 - A save that changes nothing writes nothing (no audit line, no `updatedAt` change).
 - Every add, edit, reorder, switch-off and switch-on writes an audit line holding **field names and
   ids only**, never the text typed (same rule as customers).

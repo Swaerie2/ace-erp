@@ -179,6 +179,28 @@ These apply to every module. A module is not finished until it follows all of th
 - [ ] Only the hosting dashboard holds live credentials, never `.env.local`.
 - [ ] Imported customers have no consent date. Record the lawful basis (an existing customer
       relationship) or add a consent column to the import before importing real clients.
+- [ ] The `services` seed rows are the starting wording; check them in the live app.
+
+## Services (Module 2)
+
+- **Table:** `services`, hardened like every table (Row Level Security on, no public access). Each
+  service has a name (unique ignoring case, including switched-off ones), a description (the scope
+  wording a client reads on a quote), a kind (`CORE` or `OPTIONAL_EXTRA`) and a display order.
+  Services are switched off (archived), never deleted. There is deliberately no price anywhere:
+  every client is quoted individually, so a price belongs on a quote line.
+- **Seed rows:** seven starting services are inserted by the migration, so a fresh live database
+  starts with them. Staff can edit them in the app afterwards.
+- **Roles are enforced in `packages/core/src/services/`, not in the screens.** Only OWNER and
+  MANAGER can list, add, edit, reorder, switch off or switch on a service. CREW get no access in
+  this module, and `/services` sends them to the not-allowed page.
+- **Order:** reordering swaps a switched-on service with its neighbour and renumbers the
+  switched-on services 1, 2, 3 and so on. Ties (two services added at the same moment) are broken by
+  when they were added. A service switched back on goes to the end of the list.
+- **Audit lines hold field names and ids only, never the text typed** (`service.created`,
+  `service.updated`, `service.moved`, `service.archived`, `service.restored`). A save that changes
+  nothing writes nothing.
+- **One page, `/services`,** linked from the staff menu for OWNER and MANAGER only. It uses up and
+  down buttons (no drag and drop) so it works on a phone, and a "Show switched-off services" toggle.
 
 ## Working agreement
 
