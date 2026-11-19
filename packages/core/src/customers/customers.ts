@@ -1,6 +1,6 @@
 import type { Prisma } from "../generated/prisma/client";
 import { CustomerStatus } from "../generated/prisma/enums";
-import { assertRole, MANAGEMENT, type Actor } from "./access";
+import { assertRole, DomainError, MANAGEMENT, type Actor } from "./access";
 import { contactData, customerData, propertyData } from "./mappers";
 import { parseCustomerNumber } from "./number";
 import type { ContactInput, CustomerInput, PropertyInput } from "./schemas";
@@ -103,6 +103,31 @@ export async function restoreCustomer(store: Store, actor: Actor, id: string): P
     },
   });
   await logCustomerEvent(store, actor, "customer.restored", id);
+}
+
+/**
+ * Turns a lead (or a paused customer) into an active customer in one step. An active customer is
+ * left completely untouched. An archived customer is refused: restore it first, so a former client
+ * cannot be switched on by accident. Module 3 will call this when a client accepts a quote.
+ */
+export async function activateCustomer(store: Store, actor: Actor, id: string): Promise<void> {
+  assertRole(actor, MANAGEMENT);
+  /** True when there is something to do; throws for an archived customer. */
+  const needsActivating = (status: CustomerStatus) => {
+    if (status === "ARCHIVED") {
+      throw new DomainError("Restore this customer before marking it as active.");
+    }
+    return status === "LEAD" || status === "PAUSED";
+  };
+  // Look first WITHOUT locking, so an already active customer is left completely untouched.
+  if (!needsActivating((await findEditableCustomer(store, id)).status)) return;
+  // Then lock and decide again from a fresh read: a concurrent change may have landed in between.
+  await lockCustomer(store, id);
+  const existing = await findEditableCustomer(store, id);
+  if (!needsActivating(existing.status)) return;
+  await store.customer.update({ where: { id }, data: { status: "ACTIVE" } });
+  // Only the previous status is recorded (it is not personal data).
+  await logCustomerEvent(store, actor, "customer.activated", id, { from: existing.status });
 }
 
 // --- searching ----------------------------------------------------------------------------------

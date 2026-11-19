@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { dbTestsEnabled, withRollback } from "../testing/rollback";
-import { ForbiddenError, type Actor } from "./access";
+import { DomainError, ForbiddenError, type Actor } from "./access";
 import {
+  activateCustomer,
   archiveCustomer,
   createCustomer,
   getCustomer,
@@ -13,9 +14,11 @@ import {
   updateCustomer,
 } from "./customers";
 import { findDuplicateContacts } from "./duplicates";
+import { anonymiseCustomer } from "./privacy";
 import { addProperty, archiveProperty } from "./properties";
 import { contactSchema, customerSchema, propertySchema } from "./schemas";
 
+const owner: Actor = { id: randomUUID(), role: "OWNER" };
 const manager: Actor = { id: randomUUID(), role: "MANAGER" };
 const crew: Actor = { id: randomUUID(), role: "CREW" };
 
@@ -398,6 +401,77 @@ describe.skipIf(!dbTestsEnabled)("customers data layer", () => {
       expect(
         await tx.auditLog.count({ where: { entityId: id, action: "customer.archived" } }),
       ).toBe(1);
+    });
+  });
+
+  it("marks a lead or a paused customer as active in one step and records what it was", async () => {
+    await withRollback(async (tx) => {
+      for (const from of ["LEAD", "PAUSED"] as const) {
+        const { id } = await createCustomer(tx, manager, {
+          customer: customer({ status: from }),
+          contact: contact(),
+        });
+        await activateCustomer(tx, manager, id);
+        expect((await tx.customer.findUnique({ where: { id } }))?.status).toBe("ACTIVE");
+
+        const entries = await tx.auditLog.findMany({
+          where: { entityId: id, action: "customer.activated" },
+        });
+        expect(entries).toHaveLength(1);
+        expect(entries[0]?.actorId).toBe(manager.id);
+        // Only the previous status (not personal data) is recorded.
+        expect(entries[0]?.after).toEqual({ from });
+      }
+    });
+  });
+
+  it("marking an already active customer as active changes and records nothing", async () => {
+    await withRollback(async (tx) => {
+      const { id } = await createCustomer(tx, manager, {
+        customer: customer({ status: "ACTIVE" }),
+        contact: contact(),
+      });
+      const before = await tx.customer.findUnique({ where: { id } });
+      await sleep(15);
+      await activateCustomer(tx, manager, id);
+      expect((await tx.customer.findUnique({ where: { id } }))?.updatedAt.getTime()).toBe(
+        before?.updatedAt.getTime(),
+      );
+      expect(
+        await tx.auditLog.count({ where: { entityId: id, action: "customer.activated" } }),
+      ).toBe(0);
+    });
+  });
+
+  it("will not activate an archived or anonymised customer, and refuses crew", async () => {
+    await withRollback(async (tx) => {
+      const archived = await createCustomer(tx, manager, {
+        customer: customer({ status: "LEAD" }),
+        contact: contact(),
+      });
+      await archiveCustomer(tx, manager, archived.id);
+      await expect(activateCustomer(tx, manager, archived.id)).rejects.toBeInstanceOf(DomainError);
+      // It stays archived and a lead underneath: nothing was changed or recorded.
+      expect((await tx.customer.findUnique({ where: { id: archived.id } }))?.status).toBe(
+        "ARCHIVED",
+      );
+      expect(
+        await tx.auditLog.count({ where: { entityId: archived.id, action: "customer.activated" } }),
+      ).toBe(0);
+
+      const gone = await createCustomer(tx, owner, {
+        customer: customer({ status: "LEAD" }),
+        contact: contact(),
+      });
+      await anonymiseCustomer(tx, owner, gone.id, `C-${gone.number}`);
+      await expect(activateCustomer(tx, owner, gone.id)).rejects.toBeInstanceOf(DomainError);
+
+      const lead = await createCustomer(tx, manager, {
+        customer: customer({ status: "LEAD" }),
+        contact: contact(),
+      });
+      await expect(activateCustomer(tx, crew, lead.id)).rejects.toBeInstanceOf(ForbiddenError);
+      expect((await tx.customer.findUnique({ where: { id: lead.id } }))?.status).toBe("LEAD");
     });
   });
 });

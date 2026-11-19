@@ -50,6 +50,14 @@ Each module is built, tested and approved before the next begins.
 | 6   | Jobs and scheduling          | Recurring weekly rounds, crew allocation                                          |
 | 7+  | Extras                       | Card payments, accounting export, field app, WhatsApp, reports                    |
 
+Requirements carried forward to later modules:
+
+- **Module 3 (Quotes): lead becomes active on acceptance.** When a client accepts a quote, the
+  customer moves from Lead to Active automatically by calling `activateCustomer` (already built:
+  the staff "Mark as active" button on the customer page uses it). The change is recorded as
+  "activated by quote acceptance". Only leads convert automatically; if a paused or archived
+  customer accepts a quote, it is flagged to staff instead of changing silently.
+
 ## Security and privacy rules (POPIA)
 
 These apply to every module. A module is not finished until it follows all of them.
