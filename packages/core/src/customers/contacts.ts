@@ -1,7 +1,14 @@
 import { assertRole, DomainError, MANAGEMENT, type Actor } from "./access";
 import { contactData } from "./mappers";
 import type { ContactInput } from "./schemas";
-import { changedFields, logCustomerEvent, requireEditableCustomer, type Store } from "./store";
+import {
+  changedFields,
+  findEditableCustomer,
+  lockCustomer,
+  logCustomerEvent,
+  requireEditableCustomer,
+  type Store,
+} from "./store";
 
 export async function addContact(
   store: Store,
@@ -30,9 +37,12 @@ export async function updateContact(
   assertRole(actor, MANAGEMENT);
   const existing = await store.contact.findUnique({ where: { id: contactId } });
   if (!existing) throw new DomainError("That contact could not be found.");
-  await requireEditableCustomer(store, existing.customerId);
+  await findEditableCustomer(store, existing.customerId);
   const data = contactData(input);
   const changed = changedFields(existing, data);
+  // A save that changes nothing writes nothing: no lock, no update, no audit line.
+  if (changed.length === 0) return;
+  await lockCustomer(store, existing.customerId);
   await store.contact.update({ where: { id: contactId }, data });
   await logCustomerEvent(store, actor, "customer.contact_updated", existing.customerId, {
     contactId,

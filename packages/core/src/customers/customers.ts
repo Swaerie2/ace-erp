@@ -1,9 +1,16 @@
-import type { CustomerStatus, Prisma } from "../generated/prisma/client";
+import type { Prisma } from "../generated/prisma/client";
+import { CustomerStatus } from "../generated/prisma/enums";
 import { assertRole, MANAGEMENT, type Actor } from "./access";
 import { contactData, customerData, propertyData } from "./mappers";
 import { parseCustomerNumber } from "./number";
 import type { ContactInput, CustomerInput, PropertyInput } from "./schemas";
-import { changedFields, logCustomerEvent, requireEditableCustomer, type Store } from "./store";
+import {
+  changedFields,
+  findEditableCustomer,
+  lockCustomer,
+  logCustomerEvent,
+  type Store,
+} from "./store";
 import { CREW_CUSTOMER_SELECT } from "./views";
 
 export type NewCustomerInput = {
@@ -40,22 +47,35 @@ export async function updateCustomer(
   input: CustomerInput,
 ): Promise<void> {
   assertRole(actor, MANAGEMENT);
-  const existing = await requireEditableCustomer(store, id);
-  const data = {
-    ...customerData(input),
-    // An archived customer stays archived; restoring is a separate action.
-    status: existing.status === "ARCHIVED" ? ("ARCHIVED" as const) : input.status,
+  const plan = (existing: Awaited<ReturnType<typeof findEditableCustomer>>) => {
+    const data = {
+      ...customerData(input),
+      // An archived customer stays archived; restoring is a separate action.
+      status: existing.status === "ARCHIVED" ? ("ARCHIVED" as const) : input.status,
+      // The consent date is kept while the box stays ticked, so an unchanged save compares equal.
+      consentAt: input.consentGiven ? (existing.consentAt ?? new Date()) : null,
+    };
+    return { data, changed: changedFields(existing, data) };
   };
-  const consentAt = input.consentGiven ? (existing.consentAt ?? new Date()) : null;
-  const changed = changedFields(existing, { ...data, consentAt });
-  await store.customer.update({ where: { id }, data: { ...data, consentAt } });
+
+  // Look first WITHOUT locking: a save that changes nothing must write nothing, not even the
+  // lock (which touches updatedAt) or an audit line.
+  if (plan(await findEditableCustomer(store, id)).changed.length === 0) return;
+
+  // Something changed: lock the customer for the rest of the transaction, then read it again,
+  // because a concurrent edit may have landed between the first read and the lock.
+  await lockCustomer(store, id);
+  const { data, changed } = plan(await findEditableCustomer(store, id));
+  if (changed.length === 0) return;
+  await store.customer.update({ where: { id }, data });
   await logCustomerEvent(store, actor, "customer.updated", id, { changed });
 }
 
 export async function archiveCustomer(store: Store, actor: Actor, id: string): Promise<void> {
   assertRole(actor, MANAGEMENT);
-  const existing = await requireEditableCustomer(store, id);
+  const existing = await findEditableCustomer(store, id);
   if (existing.status === "ARCHIVED") return;
+  await lockCustomer(store, id);
   await store.customer.update({
     where: { id },
     data: { status: "ARCHIVED", statusBeforeArchive: existing.status, archivedAt: new Date() },
@@ -65,8 +85,9 @@ export async function archiveCustomer(store: Store, actor: Actor, id: string): P
 
 export async function restoreCustomer(store: Store, actor: Actor, id: string): Promise<void> {
   assertRole(actor, MANAGEMENT);
-  const existing = await requireEditableCustomer(store, id);
+  const existing = await findEditableCustomer(store, id);
   if (existing.status !== "ARCHIVED") return;
+  await lockCustomer(store, id);
   await store.customer.update({
     where: { id },
     data: {
@@ -94,12 +115,20 @@ function phoneSearchTerm(q: string): string | null {
   return digits.startsWith("0") ? `27${digits.slice(1)}` : digits;
 }
 
+const STATUSES: readonly string[] = Object.values(CustomerStatus);
+
+function isStatusFilter(value: unknown): value is CustomerStatus | "ALL" {
+  return typeof value === "string" && (value === "ALL" || STATUSES.includes(value));
+}
+
 function buildWhere(query: ListQuery): Prisma.CustomerWhereInput {
   const and: Prisma.CustomerWhereInput[] = [];
-  if (query.status === "ALL") {
+  // The status comes from a URL, so check it at runtime: anything unknown means "no filter".
+  const status = isStatusFilter(query.status) ? query.status : undefined;
+  if (status === "ALL") {
     // show everything
-  } else if (query.status) {
-    and.push({ status: query.status });
+  } else if (status) {
+    and.push({ status });
   } else {
     and.push({ status: { not: "ARCHIVED" } });
   }
@@ -137,12 +166,19 @@ const LIST_SELECT = {
     take: 1,
     select: { name: true, email: true, phone: true },
   },
-  _count: { select: { properties: true } },
+  // Archived properties are hidden everywhere else, so they must not be counted either.
+  _count: { select: { properties: { where: { archivedAt: null } } } },
 } as const satisfies Prisma.CustomerSelect;
 
+/** Whole number within [min, max]. NaN, Infinity and non-numbers fall back to `fallback`. */
+function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+  const whole = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : fallback;
+  return Math.min(max, Math.max(min, whole));
+}
+
 function paging(query: { page?: number | undefined; pageSize?: number | undefined }) {
-  const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 25));
-  const page = Math.max(1, Math.floor(query.page ?? 1));
+  const pageSize = clampInt(query.pageSize, 1, 100, 25);
+  const page = clampInt(query.page, 1, 10_000, 1);
   return { page, pageSize, skip: (page - 1) * pageSize };
 }
 

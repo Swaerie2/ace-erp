@@ -46,12 +46,45 @@ export function changedFields(
   return Object.keys(after).filter((key) => !Object.is(norm(before[key]), norm(after[key])));
 }
 
-/** Throws a friendly error if the customer is missing or anonymised. */
-export async function requireEditableCustomer(store: Store, customerId: string) {
+/**
+ * Reads a customer and throws a friendly error if it is missing or anonymised. Takes no lock, so
+ * it is safe for deciding "is there anything to do?" without touching the row. Anything that then
+ * writes must call `lockCustomer` (or use `requireEditableCustomer`, which does both).
+ */
+export async function findEditableCustomer(store: Store, customerId: string) {
   const customer = await store.customer.findUnique({ where: { id: customerId } });
   if (!customer) throw new DomainError("That customer could not be found.");
   if (customer.anonymisedAt) {
     throw new DomainError("This customer has been anonymised and cannot be changed.");
   }
+  return customer;
+}
+
+/**
+ * Locks the customer row until the transaction ends, by touching it. This serialises an edit
+ * against a concurrent anonymise under READ COMMITTED: whichever comes second waits for the first
+ * to commit. The update is conditional on the customer not being anonymised, and Postgres
+ * re-checks that condition after waiting, so an edit that lost the race is refused instead of
+ * writing personal data back into an anonymised customer.
+ * It does bump `updatedAt`, so call it only when something is really about to be written.
+ */
+export async function lockCustomer(store: Store, customerId: string): Promise<void> {
+  const { count } = await store.customer.updateMany({
+    where: { id: customerId, anonymisedAt: null },
+    data: { updatedAt: new Date() },
+  });
+  if (count === 1) return;
+  const exists = await store.customer.findUnique({
+    where: { id: customerId },
+    select: { id: true },
+  });
+  if (!exists) throw new DomainError("That customer could not be found.");
+  throw new DomainError("This customer has been anonymised and cannot be changed.");
+}
+
+/** Throws a friendly error if the customer is missing or anonymised, then locks the row. */
+export async function requireEditableCustomer(store: Store, customerId: string) {
+  const customer = await findEditableCustomer(store, customerId);
+  await lockCustomer(store, customerId);
   return customer;
 }

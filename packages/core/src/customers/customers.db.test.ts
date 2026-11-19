@@ -13,11 +13,13 @@ import {
   updateCustomer,
 } from "./customers";
 import { findDuplicateContacts } from "./duplicates";
+import { addProperty, archiveProperty } from "./properties";
 import { contactSchema, customerSchema, propertySchema } from "./schemas";
 
 const manager: Actor = { id: randomUUID(), role: "MANAGER" };
 const crew: Actor = { id: randomUUID(), role: "CREW" };
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const customer = (over: Record<string, string> = {}) =>
   customerSchema.parse({ type: "PERSON", displayName: "Test Person", ...over });
 // Every test uses its own email, phone and name token, so nothing here can collide with, or be
@@ -230,6 +232,122 @@ describe.skipIf(!dbTestsEnabled)("customers data layer", () => {
       const after = await getCustomer(tx, manager, id);
       expect(after?.displayName).toBe("Test Person");
       expect(after?.status).toBe("ACTIVE");
+    });
+  });
+
+  it("counts only active properties in the list", async () => {
+    await withRollback(async (tx) => {
+      const key = `propcount${token()}`;
+      const { id } = await createCustomer(tx, manager, {
+        customer: customer({ displayName: `${key} Person` }),
+        contact: contact(),
+        property: property(`${key} First Street`),
+      });
+      const second = await addProperty(tx, manager, id, property(`${key} Second Street`));
+      const before = await listCustomers(tx, manager, { q: key });
+      expect(before.items[0]?._count.properties).toBe(2);
+
+      await archiveProperty(tx, manager, second.id);
+      const after = await listCustomers(tx, manager, { q: key });
+      expect(after.items[0]?._count.properties).toBe(1);
+    });
+  });
+
+  it("copes with odd paging and status values", async () => {
+    await withRollback(async (tx) => {
+      const key = `oddinput${token()}`;
+      const { id } = await createCustomer(tx, manager, {
+        customer: customer({ displayName: `${key} Person` }),
+        contact: contact(),
+      });
+      const gone = await createCustomer(tx, manager, {
+        customer: customer({ displayName: `${key} Gone` }),
+        contact: contact(),
+      });
+      await archiveCustomer(tx, manager, gone.id);
+
+      for (const page of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+        const r = await listCustomers(tx, manager, { q: key, page });
+        expect(r.page, `page ${page}`).toBe(1);
+        expect(r.items.map((c) => c.id)).toEqual([id]);
+      }
+      expect((await listCustomers(tx, manager, { q: key, page: 2.7 })).page).toBe(2);
+      expect((await listCustomers(tx, manager, { q: key, page: -4 })).page).toBe(1);
+      expect((await listCustomers(tx, manager, { q: key, page: 1e300 })).page).toBe(10000);
+      for (const pageSize of [Number.NaN, Number.POSITIVE_INFINITY, 0, 5.9, 1e9]) {
+        const r = await listCustomers(tx, manager, { q: key, pageSize });
+        expect(r.pageSize, `pageSize ${pageSize}`).toBeGreaterThanOrEqual(1);
+        expect(r.pageSize).toBeLessThanOrEqual(100);
+      }
+      expect((await listCustomers(tx, manager, { pageSize: 5.9 })).pageSize).toBe(5);
+      expect((await listCustomers(tx, manager, { pageSize: 1e9 })).pageSize).toBe(100);
+
+      // An unknown status behaves like no status: archived customers stay hidden.
+      const bogus = await listCustomers(tx, manager, { q: key, status: "bogus" as never });
+      expect(bogus.items.map((c) => c.id)).toEqual([id]);
+      const all = await listCustomers(tx, manager, { q: key, status: "ALL" });
+      expect(all.total).toBe(2);
+      const onlyArchived = await listCustomers(tx, manager, { q: key, status: "ARCHIVED" });
+      expect(onlyArchived.items.map((c) => c.id)).toEqual([gone.id]);
+    });
+  });
+
+  it("a no-op customer save writes nothing, keeps the consent date, and a real change still works", async () => {
+    await withRollback(async (tx) => {
+      const fields = { displayName: "Consent Person", consentGiven: "on", notes: "first" };
+      const { id } = await createCustomer(tx, manager, {
+        customer: customer(fields),
+        contact: contact(),
+      });
+      const first = await tx.customer.findUnique({ where: { id } });
+      expect(first?.consentAt).not.toBeNull();
+      const auditBefore = await tx.auditLog.count({ where: { entityId: id } });
+
+      await sleep(15);
+      await updateCustomer(tx, manager, id, customer(fields));
+      const same = await tx.customer.findUnique({ where: { id } });
+      expect(same?.updatedAt.getTime()).toBe(first?.updatedAt.getTime());
+      expect(same?.consentAt?.getTime()).toBe(first?.consentAt?.getTime());
+      expect(await tx.auditLog.count({ where: { entityId: id } })).toBe(auditBefore);
+
+      // A real change still works: it locks, writes, audits, and keeps the consent date.
+      await sleep(15);
+      await updateCustomer(tx, manager, id, customer({ ...fields, notes: "changed" }));
+      const changed = await tx.customer.findUnique({ where: { id } });
+      expect(changed?.notes).toBe("changed");
+      expect(changed?.consentAt?.getTime()).toBe(first?.consentAt?.getTime());
+      expect(changed!.updatedAt.getTime()).toBeGreaterThan(first!.updatedAt.getTime());
+      const entries = await tx.auditLog.findMany({
+        where: { entityId: id, action: "customer.updated" },
+      });
+      expect(entries).toHaveLength(1);
+      expect((entries[0]?.after as { changed: string[] }).changed).toEqual(["notes"]);
+    });
+  });
+
+  it("archiving an already archived customer, or restoring an active one, changes nothing", async () => {
+    await withRollback(async (tx) => {
+      const { id } = await createCustomer(tx, manager, {
+        customer: customer(),
+        contact: contact(),
+      });
+      const active = await tx.customer.findUnique({ where: { id } });
+      await sleep(15);
+      await restoreCustomer(tx, manager, id);
+      expect((await tx.customer.findUnique({ where: { id } }))?.updatedAt.getTime()).toBe(
+        active?.updatedAt.getTime(),
+      );
+
+      await archiveCustomer(tx, manager, id);
+      const archived = await tx.customer.findUnique({ where: { id } });
+      await sleep(15);
+      await archiveCustomer(tx, manager, id);
+      expect((await tx.customer.findUnique({ where: { id } }))?.updatedAt.getTime()).toBe(
+        archived?.updatedAt.getTime(),
+      );
+      expect(
+        await tx.auditLog.count({ where: { entityId: id, action: "customer.archived" } }),
+      ).toBe(1);
     });
   });
 });

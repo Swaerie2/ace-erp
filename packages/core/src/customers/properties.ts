@@ -1,7 +1,14 @@
 import { assertRole, DomainError, MANAGEMENT, type Actor } from "./access";
 import { propertyData } from "./mappers";
 import type { PropertyInput } from "./schemas";
-import { changedFields, logCustomerEvent, requireEditableCustomer, type Store } from "./store";
+import {
+  changedFields,
+  findEditableCustomer,
+  lockCustomer,
+  logCustomerEvent,
+  requireEditableCustomer,
+  type Store,
+} from "./store";
 
 export async function addProperty(
   store: Store,
@@ -30,9 +37,12 @@ export async function updateProperty(
   assertRole(actor, MANAGEMENT);
   const existing = await store.property.findUnique({ where: { id: propertyId } });
   if (!existing) throw new DomainError("That property could not be found.");
-  await requireEditableCustomer(store, existing.customerId);
+  await findEditableCustomer(store, existing.customerId);
   const data = propertyData(input);
   const changed = changedFields(existing, data);
+  // A save that changes nothing writes nothing: no lock, no update, no audit line.
+  if (changed.length === 0) return;
+  await lockCustomer(store, existing.customerId);
   await store.property.update({ where: { id: propertyId }, data });
   await logCustomerEvent(store, actor, "customer.property_updated", existing.customerId, {
     propertyId,

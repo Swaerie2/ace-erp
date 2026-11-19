@@ -108,4 +108,81 @@ describe("mapImportRow", () => {
     const r = mapImportRow(row({ email: "", phone: "" }), 3);
     expect(r.ok).toBe(false);
   });
+
+  it.each([
+    ["type", "constructor"],
+    ["frequency", "toString"],
+    ["source", "__proto__"],
+    ["frequency", "constructor"],
+    ["frequency", "__proto__"],
+    ["source", "constructor"],
+    ["type", "__proto__"],
+  ])("does not read an inherited object key as a valid %s: %s", (column, value) => {
+    const r = mapImportRow(row({ [column]: value, property_address: "1 Test St" }), 4);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      // Our own mapping message ("... is not weekly, ..."), not a vague schema failure.
+      expect(r.errors.some((e) => e.startsWith(`${column}: "`) && e.includes("is not"))).toBe(true);
+    }
+  });
+
+  it.each([
+    ["frequency", { frequency: "weekly" }],
+    ["monthly_fee_rand", { monthly_fee_rand: "850" }],
+    ["extras", { extras: "weed treatment" }],
+  ])("needs a property address when %s is given", (_name, over) => {
+    const r = mapImportRow(row(over), 5);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.errors).toContain(
+        "property_address: needed when frequency, monthly_fee_rand or extras is given.",
+      );
+    }
+  });
+  it("is fine with no property columns at all, or a full property", () => {
+    expect(mapImportRow(row(), 2).ok).toBe(true);
+    expect(mapImportRow(row({ property_address: "1 Test St", frequency: "weekly" }), 2).ok).toBe(
+      true,
+    );
+  });
+
+  it("names CSV columns, not internal field names, in errors", () => {
+    const r = mapImportRow(
+      row({
+        display_name: "",
+        email: "nope",
+        phone: "12",
+        property_address: "1 Test St",
+        monthly_fee_rand: "lots",
+      }),
+      6,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      const starts = r.errors.map((e) => e.split(":")[0]);
+      expect(starts).toEqual(
+        expect.arrayContaining(["display_name", "email", "phone", "monthly_fee_rand"]),
+      );
+      const text = r.errors.join(" | ");
+      for (const internal of ["displayName", "addressLine1", "monthlyFee", "contact email"]) {
+        expect(text).not.toContain(internal);
+      }
+    }
+  });
+
+  it("cuts long cell text to 40 characters when it is echoed in an error", () => {
+    const long = "x".repeat(200);
+    const r = mapImportRow(
+      row({ type: long, frequency: long, source: long, property_address: "a" }),
+      8,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      for (const column of ["type", "frequency", "source"]) {
+        const message = r.errors.find((e) => e.startsWith(`${column}:`)) ?? "";
+        expect(message).toContain("x".repeat(40));
+        expect(message).not.toContain("x".repeat(41));
+      }
+    }
+  });
 });

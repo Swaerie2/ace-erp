@@ -119,7 +119,9 @@ describe.skipIf(!dbTestsEnabled)("customer import", () => {
       expect(made[0]?.properties[0]?.agreedMonthlyFeeCents).toBe(85000);
       expect(made[1]?.contacts[0]?.phone).toBe("+27825550102");
 
-      const audit = await tx.auditLog.findFirst({ where: { action: "customer.imported" } });
+      const audit = await tx.auditLog.findFirst({
+        where: { action: "customer.imported", actorId: manager.id },
+      });
       expect(audit?.after).toEqual({ created: 2, duplicates: 0, errors: 1 });
       expect(JSON.stringify(audit)).not.toContain("Commit A");
     });
@@ -168,7 +170,10 @@ describe.skipIf(!dbTestsEnabled)("customer import", () => {
         commitImport(tx, crew, [row({ email: "c@example.com" })]),
       ).rejects.toBeInstanceOf(ForbiddenError);
       expect(await tx.customer.count()).toBe(before);
-      expect(await tx.auditLog.count({ where: { action: "customer.imported" } })).toBe(0);
+      // Scoped to this crew actor: the shared dev database may hold older committed import lines.
+      expect(
+        await tx.auditLog.count({ where: { action: "customer.imported", actorId: crew.id } }),
+      ).toBe(0);
     });
   });
 });

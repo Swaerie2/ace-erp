@@ -131,13 +131,52 @@ const SOURCES: Record<string, string> = {
   other: "OTHER",
 };
 
+/** Reads a mapping table safely: "constructor" or "__proto__" in a cell is not a key. */
+function lookup<T>(table: Record<string, T>, key: string): T | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined;
+}
+
+/** Cell text echoed back in an error message is cut short, so a huge cell cannot flood the screen. */
+const ECHO_LIMIT = 40;
+function echo(text: string): string {
+  return text.length > ECHO_LIMIT ? `${text.slice(0, ECHO_LIMIT)}...` : text;
+}
+
+// Which CSV column each form field came from, so errors name what the user sees in their sheet.
+const CUSTOMER_COLUMNS: Record<string, string> = {
+  type: "type",
+  displayName: "display_name",
+  companyName: "company_name",
+  billingLine1: "billing_line1",
+  billingSuburb: "billing_suburb",
+  billingCity: "billing_city",
+  billingPostalCode: "billing_postal_code",
+  source: "source",
+  notes: "notes",
+};
+const CONTACT_COLUMNS: Record<string, string> = {
+  name: "contact_name",
+  email: "email",
+  phone: "phone",
+};
+const PROPERTY_COLUMNS: Record<string, string> = {
+  addressLine1: "property_address",
+  suburb: "property_suburb",
+  city: "property_city",
+  frequency: "frequency",
+  monthlyFee: "monthly_fee_rand",
+  extrasNote: "extras",
+};
+
 function issues(
-  prefix: string,
+  columns: Record<string, string>,
+  fallback: string,
   error: { issues: { path: PropertyKey[]; message: string }[] },
 ): string[] {
-  return error.issues.map(
-    (i) => `${prefix}${i.path.map((p) => String(p)).join(".") || "value"}: ${i.message}`,
-  );
+  return error.issues.map((i) => {
+    const field = i.path[0] === undefined ? undefined : String(i.path[0]);
+    return `${(field && columns[field]) || fallback}: ${i.message}`;
+  });
 }
 
 /** One spreadsheet row -> validated records, or a list of everything wrong with it. */
@@ -148,21 +187,21 @@ export function mapImportRow(
   const errors: string[] = [];
   const get = (key: string) => raw[key] ?? "";
 
-  const type = TYPES[get("type").toLowerCase()];
-  if (!type) errors.push(`type: "${get("type")}" is not person or company.`);
+  const type = lookup(TYPES, get("type").toLowerCase());
+  if (!type) errors.push(`type: "${echo(get("type"))}" is not person or company.`);
 
   const freqText = get("frequency").toLowerCase();
-  const frequency = FREQUENCIES[freqText];
+  const frequency = lookup(FREQUENCIES, freqText);
   if (freqText && !frequency)
     errors.push(
-      `frequency: "${get("frequency")}" is not weekly, fortnightly, monthly or once-off.`,
+      `frequency: "${echo(get("frequency"))}" is not weekly, fortnightly, monthly or once-off.`,
     );
 
   const sourceText = get("source").toLowerCase();
-  const source = SOURCES[sourceText];
+  const source = lookup(SOURCES, sourceText);
   if (sourceText && !source)
     errors.push(
-      `source: "${get("source")}" is not referral, google, facebook, directory or other.`,
+      `source: "${echo(get("source"))}" is not referral, google, facebook, directory or other.`,
     );
 
   const customer = customerSchema.safeParse({
@@ -197,9 +236,14 @@ export function mapImportRow(
       })
     : null;
 
-  if (!customer.success) errors.push(...issues("", customer.error));
-  if (!contact.success) errors.push(...issues("contact ", contact.error));
-  if (property && !property.success) errors.push(...issues("property ", property.error));
+  if (!wantsProperty && (freqText || get("monthly_fee_rand") || get("extras"))) {
+    errors.push("property_address: needed when frequency, monthly_fee_rand or extras is given.");
+  }
+  if (!customer.success) errors.push(...issues(CUSTOMER_COLUMNS, "display_name", customer.error));
+  if (!contact.success) errors.push(...issues(CONTACT_COLUMNS, "email", contact.error));
+  if (property && !property.success) {
+    errors.push(...issues(PROPERTY_COLUMNS, "property_address", property.error));
+  }
   if (
     errors.length > 0 ||
     !customer.success ||

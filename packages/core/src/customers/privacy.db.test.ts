@@ -403,4 +403,45 @@ describe.skipIf(!dbTestsEnabled)("customer privacy tools", () => {
       expect(exported.customer.displayName).not.toBe(v.displayName);
     });
   });
+
+  it("also clears the free-text grass type, keeps lawn size and day, and a repeat call fails cleanly", async () => {
+    await withRollback(async (tx) => {
+      const grass = tag("grass");
+      const { id, number } = await createCustomer(tx, owner, {
+        customer: customerSchema.parse({ type: "PERSON", displayName: tag("name") }),
+        contact: contactSchema.parse({
+          name: tag("contact"),
+          email: `${randomUUID()}@example.com`,
+        }),
+        property: propertySchema.parse({
+          label: tag("label"),
+          addressLine1: tag("street"),
+          grassType: grass,
+          lawnSizeSqm: "320",
+          preferredDay: "Tuesday",
+        }),
+      });
+      const confirm = formatCustomerNumber(number);
+      await anonymiseCustomer(tx, owner, id, confirm);
+      const first = await tx.customer.findUnique({ where: { id } });
+      const props = await tx.property.findMany({ where: { customerId: id } });
+      expect(props[0]?.grassType).toBeNull();
+      expect(props[0]?.lawnSizeSqm).toBe(320);
+      expect(props[0]?.preferredDay).toBe("Tuesday");
+
+      await expect(anonymiseCustomer(tx, owner, id, confirm)).rejects.toThrow(
+        "This customer is already anonymised.",
+      );
+      // The refused second call changed nothing: still scrubbed, same anonymising time, one audit line.
+      const again = await tx.customer.findUnique({ where: { id } });
+      expect(again?.anonymisedAt?.getTime()).toBe(first?.anonymisedAt?.getTime());
+      expect(again?.displayName).toBe("Anonymised customer");
+      expect(
+        JSON.stringify(await tx.property.findMany({ where: { customerId: id } })),
+      ).not.toContain(grass);
+      expect(
+        await tx.auditLog.count({ where: { entityId: id, action: "customer.anonymised" } }),
+      ).toBe(1);
+    });
+  });
 });
