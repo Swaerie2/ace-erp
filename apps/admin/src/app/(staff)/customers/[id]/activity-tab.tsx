@@ -1,4 +1,5 @@
 import type { listCustomerActivity } from "@ace/core";
+import { formatDateTime } from "@/lib/format";
 
 type Entries = Awaited<ReturnType<typeof listCustomerActivity>>;
 
@@ -17,12 +18,6 @@ const label: Record<string, string> = {
   "customer.anonymised": "Anonymised",
 };
 
-const when = new Intl.DateTimeFormat("en-ZA", {
-  dateStyle: "medium",
-  timeStyle: "short",
-  timeZone: "Africa/Johannesburg",
-});
-
 /** Field names only. The audit entry's other contents are never shown. */
 function changedFields(after: unknown): string[] {
   const changed = (after as { changed?: unknown } | null)?.changed;
@@ -39,7 +34,7 @@ export function ActivityTab({ entries }: { entries: Entries }) {
           <li key={e.id} className="px-4 py-3 text-sm">
             <p className="font-semibold text-forest">{label[e.action] ?? e.action}</p>
             <p className="text-charcoal/60">
-              {e.actorName} · {when.format(e.at)}
+              {e.actorName} · {formatDateTime(e.at)}
               {fields.length ? ` · fields: ${fields.join(", ")}` : ""}
             </p>
           </li>

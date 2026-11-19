@@ -29,7 +29,7 @@ export function CrewView({ customer }: { customer: CrewCustomer }) {
                 rel="noopener noreferrer"
                 className="mt-1 inline-block text-sm text-forest underline"
               >
-                Open map
+                Open map<span className="sr-only"> (opens in a new tab)</span>
               </a>
             ) : null}
             {p.accessNotes ? (

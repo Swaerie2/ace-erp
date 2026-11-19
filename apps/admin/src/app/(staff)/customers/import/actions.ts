@@ -30,6 +30,8 @@ export type ImportState =
         duplicates: ImportPreview["duplicates"];
         errors: ImportPreview["errors"];
       };
+      /** The name of the file this preview is of (shown so a newly chosen file is not mistaken for it). */
+      fileName?: string;
       /** The uploaded rows, sent back with the confirm button. The file itself is never stored. */
       rowsJson?: string;
       /** The spreadsheet row number of each row in `rowsJson`. */
@@ -40,6 +42,9 @@ export type ImportState =
 const MANAGEMENT = ["OWNER", "MANAGER"] as const;
 
 const TOO_BIG = "That file is bigger than 2 MB.";
+const TOO_BIG_TO_PREVIEW = "This file is too large to preview safely. Split it into smaller files.";
+/** The confirm step posts the rows back; a server action body is limited to 3 MB. */
+const MAX_ROUNDTRIP_CHARS = 2_400_000;
 
 export async function previewImportAction(
   _prev: ImportState,
@@ -50,23 +55,27 @@ export async function previewImportAction(
 
   // Every limit is checked before the file is read or parsed.
   const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0)
-    return { error: "Choose a CSV file first.", nonce: Date.now() };
+  if (!(file instanceof File)) return { error: "Choose a CSV file first.", nonce: Date.now() };
+  if (file.size === 0) return { error: "That file is empty.", nonce: Date.now() };
   if (file.size > MAX_IMPORT_BYTES) return { error: TOO_BIG, nonce: Date.now() };
   if (!file.name.toLowerCase().endsWith(".csv"))
     return { error: "Only .csv files can be imported.", nonce: Date.now() };
 
-  const text = await file.text();
-  // Defence in depth: the decoded text must be within the limit too.
-  if (text.length > MAX_IMPORT_BYTES) return { error: TOO_BIG, nonce: Date.now() };
-
-  const parsed = parseCsvText(text);
+  const parsed = parseCsvText(await file.text());
   if ("error" in parsed) return { error: parsed.error, nonce: Date.now() };
 
+  const rowsJson = JSON.stringify(parsed.rows);
+  const linesJson = JSON.stringify(parsed.lines);
+  if (rowsJson.length + linesJson.length > MAX_ROUNDTRIP_CHARS)
+    return { error: TOO_BIG_TO_PREVIEW, nonce: Date.now() };
+
   try {
-    const preview = await inTx((tx) => prepareImport(tx, actor, parsed.rows, parsed.lines));
+    const preview = await inTx((tx) => prepareImport(tx, actor, parsed.rows, parsed.lines), {
+      timeoutMs: 120_000,
+    });
     return {
       nonce: Date.now(),
+      fileName: file.name.slice(0, 100),
       preview: {
         createCount: preview.create.length,
         duplicateCount: preview.duplicates.length,
@@ -77,8 +86,8 @@ export async function previewImportAction(
         duplicates: preview.duplicates.slice(0, 200),
         errors: preview.errors.slice(0, 200),
       },
-      rowsJson: JSON.stringify(parsed.rows),
-      linesJson: JSON.stringify(parsed.lines),
+      rowsJson,
+      linesJson,
     };
   } catch (error) {
     return failure(error);

@@ -6,11 +6,18 @@ type Props = {
   errors: Record<string, string>;
   /** Focus the Name box on mount. Only for a brand-new form, never after a response. */
   autoFocus?: boolean;
+  /** Show the status as a fixed line (an archived customer) instead of a select. */
+  statusLocked?: boolean;
 };
 
 const label = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
 
-export function CustomerFields({ values: v, errors: e, autoFocus = false }: Props) {
+export function CustomerFields({
+  values: v,
+  errors: e,
+  autoFocus = false,
+  statusLocked = false,
+}: Props) {
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
@@ -24,17 +31,24 @@ export function CustomerFields({ values: v, errors: e, autoFocus = false }: Prop
           ]}
           error={e.type}
         />
-        <SelectField
-          label="Status"
-          name="status"
-          defaultValue={v.status ?? "ACTIVE"}
-          options={[
-            { value: "LEAD", label: "Lead" },
-            { value: "ACTIVE", label: "Active" },
-            { value: "PAUSED", label: "Paused" },
-          ]}
-          error={e.status}
-        />
+        {statusLocked ? (
+          <p className="self-end pb-2 text-sm text-charcoal/70">
+            <span className="font-medium text-charcoal">Status:</span> Archived. Use Restore on the
+            overview to bring this customer back.
+          </p>
+        ) : (
+          <SelectField
+            label="Status"
+            name="status"
+            defaultValue={v.status ?? "ACTIVE"}
+            options={[
+              { value: "LEAD", label: "Lead" },
+              { value: "ACTIVE", label: "Active" },
+              { value: "PAUSED", label: "Paused" },
+            ]}
+            error={e.status}
+          />
+        )}
       </div>
       <TextField
         label="Name"

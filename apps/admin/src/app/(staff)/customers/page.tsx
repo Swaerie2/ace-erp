@@ -10,8 +10,13 @@ import { inputClass } from "@/components/auth-card";
 import { secondaryButtonClass } from "@/components/form";
 import { toActor } from "@/lib/actor";
 import { requireStaff } from "@/lib/auth";
+import { first, nonNegativeInt, positiveInt } from "@/lib/search-params";
 
-type Search = { q?: string; status?: string; page?: string; imported?: string };
+type Param = string | string[] | undefined;
+type Search = { q?: Param; status?: Param; page?: Param; imported?: Param };
+
+const MAX_QUERY = 100;
+const MAX_PAGE = 10_000;
 
 const STATUSES = ["LEAD", "ACTIVE", "PAUSED", "ARCHIVED"] as const;
 
@@ -26,11 +31,13 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
   const staff = await requireStaff(); // every page starts with this
   const sp = await searchParams;
   const actor = await toActor(staff);
-  const q = sp.q?.trim() ?? "";
-  const page = Number(sp.page) > 0 ? Number(sp.page) : 1;
+  const q = (first(sp.q) ?? "").trim().slice(0, MAX_QUERY);
+  const page = positiveInt(sp.page, MAX_PAGE) ?? 1;
+  const imported = nonNegativeInt(sp.imported);
   const isCrew = staff.role === "CREW";
 
-  const status = STATUSES.find((s) => s === sp.status) ?? (sp.status === "ALL" ? "ALL" : undefined);
+  const rawStatus = first(sp.status);
+  const status = STATUSES.find((s) => s === rawStatus) ?? (rawStatus === "ALL" ? "ALL" : undefined);
   const result = isCrew
     ? await listCustomersForCrew(getDb(), actor, { q, page })
     : await listCustomers(getDb(), actor, {
@@ -43,7 +50,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
   const link = (p: number) => {
     const params = new URLSearchParams();
     if (q) params.set("q", q);
-    if (sp.status) params.set("status", sp.status);
+    if (status) params.set("status", status);
     params.set("page", String(p));
     return `/customers?${params.toString()}`;
   };
@@ -67,9 +74,9 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
         )}
       </div>
 
-      {sp.imported ? (
+      {imported !== undefined ? (
         <p role="status" className="mt-4 rounded-lg bg-forest/10 px-3 py-2 text-sm text-forest">
-          Import finished: {Number(sp.imported) || 0} customers added.
+          Import finished: {imported} {imported === 1 ? "customer" : "customers"} added.
         </p>
       ) : null}
 
@@ -86,7 +93,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
         {isCrew ? null : (
           <select
             name="status"
-            defaultValue={sp.status ?? ""}
+            defaultValue={status ?? ""}
             aria-label="Status"
             className={`${inputClass} mt-0 w-auto`}
           >
@@ -104,9 +111,16 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
         </button>
       </form>
 
-      {result.items.length === 0 ? (
+      {page > pages ? (
         <p className="mt-10 text-center text-charcoal/60">
-          {q ? "No customers match that search." : "No customers yet."}
+          That page does not exist.{" "}
+          <Link href={link(1)} className="text-forest underline">
+            Go to page 1
+          </Link>
+        </p>
+      ) : result.items.length === 0 ? (
+        <p className="mt-10 text-center text-charcoal/60">
+          {q || status ? "No customers match that search or filter." : "No customers yet."}
         </p>
       ) : (
         <ul className="mt-6 divide-y divide-charcoal/10 rounded-2xl bg-white/70 ring-1 ring-charcoal/10">
@@ -119,7 +133,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
                   href={`/customers/${c.id}`}
                   className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 hover:bg-cream/60"
                 >
-                  <span>
+                  <span className="min-w-0 break-words">
                     <span className="font-semibold text-forest">{c.displayName}</span>
                     <span className="ml-2 text-xs text-charcoal/50">
                       {formatCustomerNumber(c.number)}

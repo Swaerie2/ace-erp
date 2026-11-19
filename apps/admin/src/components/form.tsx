@@ -3,6 +3,9 @@ import { inputClass } from "./auth-card";
 export const secondaryButtonClass =
   "inline-flex items-center justify-center rounded-full border border-forest/30 px-5 py-2.5 font-display text-sm font-semibold text-forest transition-colors hover:bg-forest hover:text-cream focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest";
 
+export const dangerButtonClass =
+  "inline-flex items-center justify-center rounded-full border border-red-700 bg-red-700 px-5 py-2.5 font-display text-sm font-semibold text-white transition-colors hover:bg-red-800 disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700";
+
 type Common = {
   label: string;
   name: string;

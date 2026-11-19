@@ -2,7 +2,7 @@
 
 import { useActionState, useRef } from "react";
 import { inputClass } from "@/components/auth-card";
-import { FormMessage, secondaryButtonClass } from "@/components/form";
+import { dangerButtonClass, FormMessage } from "@/components/form";
 import { useFocusOnFeedback } from "@/lib/use-focus-on-feedback";
 import { anonymiseCustomerAction } from "../actions";
 
@@ -28,17 +28,23 @@ export function OwnerTools({ id, number }: { id: string; number: string }) {
       </p>
       <form ref={formRef} action={action} className="space-y-3">
         <input type="hidden" name="id" value={id} />
-        <p className="text-sm text-charcoal/80">
+        <p id="anonymise-warning" className="text-sm text-charcoal/80">
           <strong>Anonymise</strong> permanently removes names, phone numbers, emails, addresses,
           notes and access details. The customer number and money amounts stay so old invoices still
           add up. <strong>This cannot be undone.</strong>
         </p>
         <label className="block text-sm font-medium">
           Type {number} to confirm
-          <input name="confirm" autoComplete="off" required className={inputClass} />
+          <input
+            name="confirm"
+            autoComplete="off"
+            required
+            aria-describedby="anonymise-warning"
+            className={inputClass}
+          />
         </label>
         <FormMessage error={state?.error} />
-        <button type="submit" disabled={pending} className={secondaryButtonClass}>
+        <button type="submit" disabled={pending} className={dangerButtonClass}>
           {pending ? "Working…" : "Anonymise this customer"}
         </button>
       </form>

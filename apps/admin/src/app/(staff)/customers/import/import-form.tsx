@@ -33,6 +33,8 @@ export function ImportForm() {
             // A fresh preview starts a fresh confirm form (no stale error from the last one).
             key={previewState?.nonce}
             preview={preview}
+            fileName={previewState?.fileName ?? ""}
+            checking={previewing}
             rowsJson={previewState?.rowsJson ?? ""}
             linesJson={previewState?.linesJson ?? ""}
           />
@@ -44,10 +46,15 @@ export function ImportForm() {
 
 function PreviewResult({
   preview,
+  fileName,
+  checking,
   rowsJson,
   linesJson,
 }: {
   preview: Preview;
+  fileName: string;
+  /** A new preview is being made; this one is about to be replaced. */
+  checking: boolean;
   rowsJson: string;
   linesJson: string;
 }) {
@@ -57,11 +64,21 @@ function PreviewResult({
 
   return (
     <section className="space-y-5 rounded-2xl bg-white/70 p-5 ring-1 ring-charcoal/10">
-      <h2 className="font-display text-lg font-semibold text-forest">Preview</h2>
+      <div>
+        <h2 className="font-display text-lg font-semibold text-forest">Preview</h2>
+        {fileName ? (
+          <p className="mt-1 break-words text-xs text-charcoal/60">
+            Preview of {fileName}. Add imports exactly this preview, not a newly chosen file.
+          </p>
+        ) : null}
+      </div>
       <p className="text-sm">
         <strong>{preview.createCount}</strong> will be added ·{" "}
-        <strong>{preview.duplicateCount}</strong> skipped as duplicates ·{" "}
-        <strong>{preview.errorCount}</strong> have errors and are skipped
+        <strong>{preview.duplicateCount}</strong> skipped as{" "}
+        {preview.duplicateCount === 1 ? "a duplicate" : "duplicates"} ·{" "}
+        <strong>{preview.errorCount}</strong>{" "}
+        {preview.errorCount === 1 ? "row has an error" : "rows have errors"} and{" "}
+        {preview.errorCount === 1 ? "is" : "are"} skipped
       </p>
 
       {preview.sample.length > 0 ? (
@@ -114,7 +131,7 @@ function PreviewResult({
           <input type="hidden" name="rowsJson" value={rowsJson} />
           <input type="hidden" name="linesJson" value={linesJson} />
           <FormMessage error={commitState?.error} />
-          <button type="submit" disabled={committing} className={buttonClass}>
+          <button type="submit" disabled={committing || checking} className={buttonClass}>
             {committing
               ? "Importing…"
               : `Add ${preview.createCount} ${preview.createCount === 1 ? "customer" : "customers"}`}

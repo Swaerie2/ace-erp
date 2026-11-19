@@ -11,9 +11,12 @@ import { CustomerFields } from "../_components/customer-fields";
 export function EditCustomerForm({
   id,
   initialValues,
+  statusLocked = false,
 }: {
   id: string;
   initialValues: Record<string, string>;
+  /** An archived customer's status cannot be changed here; Restore is on the overview. */
+  statusLocked?: boolean;
 }) {
   const [state, action, pending] = useActionState(updateCustomerAction, undefined);
   const formRef = useRef<HTMLFormElement>(null);
@@ -23,7 +26,11 @@ export function EditCustomerForm({
     <form ref={formRef} action={action} className="space-y-6">
       <input type="hidden" name="id" value={id} />
       <div key={state?.nonce ?? "initial"}>
-        <CustomerFields values={state?.values ?? initialValues} errors={state?.fieldErrors ?? {}} />
+        <CustomerFields
+          values={state?.values ?? initialValues}
+          errors={state?.fieldErrors ?? {}}
+          statusLocked={statusLocked}
+        />
       </div>
       <FormMessage error={state?.error} />
       <div className="flex gap-3">

@@ -53,14 +53,14 @@ export function ContactsTab({
       <ul className="divide-y divide-charcoal/10 rounded-2xl bg-white/70 ring-1 ring-charcoal/10">
         {customer.contacts.map((c) => (
           <li key={c.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-            <div>
+            <div className="min-w-0">
               <p className="font-semibold text-forest">
                 {c.name}
                 {c.role ? (
                   <span className="ml-2 text-sm font-normal text-charcoal/60">{c.role}</span>
                 ) : null}
               </p>
-              <p className="text-sm text-charcoal/70">
+              <p className="break-words text-sm text-charcoal/70">
                 {[c.email, c.phone].filter(Boolean).join(" · ")}
               </p>
               <p className="mt-1 text-xs text-charcoal/50">

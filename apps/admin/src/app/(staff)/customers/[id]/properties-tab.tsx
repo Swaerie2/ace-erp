@@ -53,7 +53,7 @@ export function PropertiesTab({
         {customer.properties.map((p) => (
           <li key={p.id} className="rounded-2xl bg-white/70 p-5 ring-1 ring-charcoal/10">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
+              <div className="min-w-0 break-words">
                 <p className="font-semibold text-forest">{p.label}</p>
                 <p className="text-sm text-charcoal">
                   {[p.addressLine1, p.addressLine2, p.suburb, p.city, p.postalCode]
@@ -67,7 +67,7 @@ export function PropertiesTab({
                     rel="noopener noreferrer"
                     className="text-sm text-forest underline"
                   >
-                    Open map
+                    Open map<span className="sr-only"> (opens in a new tab)</span>
                   </a>
                 ) : null}
               </div>

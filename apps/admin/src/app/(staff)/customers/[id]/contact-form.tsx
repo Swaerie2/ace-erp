@@ -63,9 +63,11 @@ export function ContactForm({ customerId, contact }: { customerId: string; conta
                 <Link
                   href={`/customers/${d.customerId}`}
                   target="_blank"
+                  rel="noopener noreferrer"
                   className="text-forest underline"
                 >
                   {d.displayName} ({formatCustomerNumber(d.number)})
+                  <span className="sr-only"> (opens in a new tab)</span>
                 </Link>
               </li>
             ))}

@@ -55,8 +55,10 @@ export function NewCustomerForm() {
                   href={`/customers/${d.customerId}`}
                   className="text-forest underline"
                   target="_blank"
+                  rel="noopener noreferrer"
                 >
                   {d.displayName} ({formatCustomerNumber(d.number)})
+                  <span className="sr-only"> (opens in a new tab)</span>
                 </Link>{" "}
                 matched by {d.reason}
               </li>

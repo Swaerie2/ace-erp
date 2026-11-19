@@ -1,6 +1,7 @@
 import { formatCustomerNumber, type getCustomer } from "@ace/core";
 import Link from "next/link";
 import { secondaryButtonClass } from "@/components/form";
+import { formatDate } from "@/lib/format";
 import { archiveCustomerAction, restoreCustomerAction } from "../actions";
 import { EditCustomerForm } from "./edit-customer-form";
 import { OwnerTools } from "./owner-tools";
@@ -38,7 +39,7 @@ function Row({ label, value }: { label: string; value?: string | null }) {
   return (
     <div className="grid gap-1 py-2 sm:grid-cols-3">
       <dt className="text-sm text-charcoal/60">{label}</dt>
-      <dd className="text-sm text-charcoal sm:col-span-2">{value || "—"}</dd>
+      <dd className="break-words text-sm text-charcoal sm:col-span-2">{value || "—"}</dd>
     </div>
   );
 }
@@ -52,7 +53,14 @@ export function OverviewTab({
   editing: boolean;
   isOwner: boolean;
 }) {
-  if (editing && !c.anonymisedAt) return <EditCustomerForm id={c.id} initialValues={toValues(c)} />;
+  if (editing && !c.anonymisedAt)
+    return (
+      <EditCustomerForm
+        id={c.id}
+        initialValues={toValues(c)}
+        statusLocked={c.status === "ARCHIVED"}
+      />
+    );
 
   const billing = [
     c.billingLine1,
@@ -84,7 +92,7 @@ export function OverviewTab({
           label="Details held with consent"
           value={
             c.consentAt
-              ? `Yes, ${c.consentAt.toLocaleDateString("en-ZA")}${c.consentSource ? ` (${c.consentSource})` : ""}`
+              ? `Yes, ${formatDate(c.consentAt)}${c.consentSource ? ` (${c.consentSource})` : ""}`
               : "Not recorded"
           }
         />
@@ -92,7 +100,7 @@ export function OverviewTab({
 
       {c.anonymisedAt ? (
         <p className="text-sm text-charcoal/60">
-          This customer was anonymised on {c.anonymisedAt.toLocaleDateString("en-ZA")}.
+          This customer was anonymised on {formatDate(c.anonymisedAt)}.
         </p>
       ) : (
         <div className="flex flex-wrap gap-3">
