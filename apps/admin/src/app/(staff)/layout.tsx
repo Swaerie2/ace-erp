@@ -15,6 +15,11 @@ export default async function StaffLayout({ children }: { children: React.ReactN
             <Link href="/customers" className="text-charcoal/80 hover:text-forest">
               Customers
             </Link>
+            {staff.role === "CREW" ? null : (
+              <Link href="/services" className="text-charcoal/80 hover:text-forest">
+                Services
+              </Link>
+            )}
           </nav>
           <div className="flex items-center gap-3 text-sm">
             <span className="hidden text-charcoal/60 sm:inline">
