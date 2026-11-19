@@ -1,8 +1,9 @@
-import type { getCustomer } from "@ace/core";
+import { formatCustomerNumber, type getCustomer } from "@ace/core";
 import Link from "next/link";
 import { secondaryButtonClass } from "@/components/form";
 import { archiveCustomerAction, restoreCustomerAction } from "../actions";
 import { EditCustomerForm } from "./edit-customer-form";
+import { OwnerTools } from "./owner-tools";
 
 type Customer = NonNullable<Awaited<ReturnType<typeof getCustomer>>>;
 
@@ -107,7 +108,7 @@ export function OverviewTab({
         </div>
       )}
       {isOwner && !c.anonymisedAt ? (
-        <p className="text-xs text-charcoal/50">Owner tools are added in a later step.</p>
+        <OwnerTools id={c.id} number={formatCustomerNumber(c.number)} />
       ) : null}
     </div>
   );

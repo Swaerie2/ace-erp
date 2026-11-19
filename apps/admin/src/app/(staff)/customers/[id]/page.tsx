@@ -1,9 +1,16 @@
-import { formatCustomerNumber, getCustomer, getCustomerForCrew, getDb } from "@ace/core";
+import {
+  formatCustomerNumber,
+  getCustomer,
+  getCustomerForCrew,
+  getDb,
+  listCustomerActivity,
+} from "@ace/core";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 import { toActor } from "@/lib/actor";
 import { requireStaff } from "@/lib/auth";
+import { ActivityTab } from "./activity-tab";
 import { ContactsTab } from "./contacts-tab";
 import { CrewView } from "./crew-view";
 import { OverviewTab } from "./overview-tab";
@@ -12,8 +19,8 @@ import { PropertiesTab } from "./properties-tab";
 type Search = {
   tab?: string;
   edit?: string | string[];
-  add?: string;
-  error?: string;
+  add?: string | string[];
+  error?: string | string[];
 };
 const TABS = ["overview", "contacts", "properties", "activity"] as const;
 type Tab = (typeof TABS)[number];
@@ -43,6 +50,8 @@ export default async function CustomerPage({
   const tab: Tab = TABS.find((t) => t === sp.tab) ?? "overview";
   // A repeated ?edit= arrives as an array; treat it as absent.
   const edit = Array.isArray(sp.edit) ? undefined : sp.edit;
+  const add = Array.isArray(sp.add) ? undefined : sp.add;
+  const notice = Array.isArray(sp.error) ? undefined : sp.error;
 
   return (
     <div>
@@ -81,11 +90,11 @@ export default async function CustomerPage({
             isOwner={staff.role === "OWNER"}
           />
         ) : tab === "contacts" ? (
-          <ContactsTab customer={customer} edit={edit} add={sp.add === "1"} notice={sp.error} />
+          <ContactsTab customer={customer} edit={edit} add={add === "1"} notice={notice} />
         ) : tab === "properties" ? (
-          <PropertiesTab customer={customer} edit={edit} add={sp.add === "1"} />
+          <PropertiesTab customer={customer} edit={edit} add={add === "1"} />
         ) : (
-          <p className="text-charcoal/60">This section is built in a later step.</p>
+          <ActivityTab entries={await listCustomerActivity(getDb(), actor, id)} />
         )}
       </div>
     </div>

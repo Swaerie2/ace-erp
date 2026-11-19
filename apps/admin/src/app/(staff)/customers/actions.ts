@@ -2,6 +2,7 @@
 
 import {
   addContact,
+  anonymiseCustomer,
   addProperty,
   archiveCustomer,
   archiveProperty,
@@ -212,4 +213,24 @@ export async function archivePropertyAction(formData: FormData): Promise<void> {
     failure(error);
   }
   redirect(`/customers/${customerId}?tab=properties`);
+}
+
+export async function anonymiseCustomerAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const staff = await requireStaff(["OWNER"]);
+  const actor = await toActor(staff);
+  const values = formValues(formData);
+  const id = idSchema.safeParse(values.id);
+  if (!id.success)
+    return { error: "Something went wrong. Refresh the page and try again.", nonce: Date.now() };
+
+  try {
+    // One transaction: the three updates and the audit entry succeed or fail together.
+    await inTx((tx) => anonymiseCustomer(tx, actor, id.data, values.confirm ?? ""));
+  } catch (error) {
+    return failure(error);
+  }
+  redirect(`/customers/${id.data}`);
 }
