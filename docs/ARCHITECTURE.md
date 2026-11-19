@@ -62,8 +62,9 @@ Requirements carried forward to later modules:
   recurring, visit frequency (weekly, every two weeks, monthly; always billed as one monthly
   amount), price and a note; switched off rows show as "Not included, quoted separately on
   request". Drafts save as you go; decide how it behaves with no signal on site. Each quote line
-  stores a copy of the service wording, and acceptance freezes the scope as the customer's agreed
-  scope. Work requested outside that scope becomes an extra-work quote. Module 3 also replaces the
+  stores a copy of the service name, description and kind, and acceptance freezes the scope as the
+  customer's agreed scope. Do not treat `services.updatedAt` as "last edited": it is also touched
+  by row locks. Work requested outside that scope becomes an extra-work quote. Module 3 also replaces the
   temporary property fee and extras fields (migration to be approved then).
 - **Module 6 (Jobs): crew see the agreed scope** for each property, so included work and extras
   are clear on the day.
@@ -195,12 +196,17 @@ These apply to every module. A module is not finished until it follows all of th
   this module, and `/services` sends them to the not-allowed page.
 - **Order:** reordering swaps a switched-on service with its neighbour and renumbers the
   switched-on services 1, 2, 3 and so on. Ties (two services added at the same moment) are broken by
-  when they were added. A service switched back on goes to the end of the list.
+  creation time, then by id. A service switched back on goes to the end of the list.
 - **Audit lines hold field names and ids only, never the text typed** (`service.created`,
   `service.updated`, `service.moved`, `service.archived`, `service.restored`). A save that changes
   nothing writes nothing.
 - **One page, `/services`,** linked from the staff menu for OWNER and MANAGER only. It uses up and
   down buttons (no drag and drop) so it works on a phone, and a "Show switched-off services" toggle.
+- **Hand-written SQL:** `services_name_lower_key`, the `*_not_blank` / `*_lowercase` CHECK
+  constraints and the RLS/REVOKE statements are hand-written SQL that Prisma does not know about.
+  Any generated migration must be read for a DROP of them, and migrations are produced with
+  `prisma migrate diff` (schema to schema), not `prisma migrate dev`, against the shared dev
+  database.
 
 ## Working agreement
 

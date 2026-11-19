@@ -26,7 +26,7 @@ export default async function ServicesPage({ searchParams }: { searchParams: Pro
 
   const back = (
     <Link
-      href="/services"
+      href={editing?.archivedAt && !adding ? "/services?archived=1" : "/services"}
       className="inline-flex min-h-10 items-center text-sm text-forest hover:underline"
     >
       ← Services
@@ -53,6 +53,7 @@ export default async function ServicesPage({ searchParams }: { searchParams: Pro
             name: editing.name,
             description: editing.description,
             kind: editing.kind,
+            archived: editing.archivedAt !== null,
           }}
         />
       </div>
@@ -117,12 +118,16 @@ export default async function ServicesPage({ searchParams }: { searchParams: Pro
                     ↓
                   </button>
                 </form>
-                <Link href={`/services?edit=${s.id}`} className={smallButton}>
+                <Link
+                  href={`/services?edit=${s.id}`}
+                  className={smallButton}
+                  aria-label={`Edit ${s.name}`}
+                >
                   Edit
                 </Link>
                 <form action={archiveServiceAction}>
                   <input type="hidden" name="id" value={s.id} />
-                  <button type="submit" className={smallButton}>
+                  <button type="submit" className={smallButton} aria-label={`Switch off ${s.name}`}>
                     Switch off
                   </button>
                 </form>
@@ -159,12 +164,20 @@ export default async function ServicesPage({ searchParams }: { searchParams: Pro
                     <p className="break-words text-sm">{s.description}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <Link href={`/services?edit=${s.id}`} className={smallButton}>
+                    <Link
+                      href={`/services?edit=${s.id}`}
+                      className={smallButton}
+                      aria-label={`Edit ${s.name}`}
+                    >
                       Edit
                     </Link>
                     <form action={restoreServiceAction}>
                       <input type="hidden" name="id" value={s.id} />
-                      <button type="submit" className={smallButton}>
+                      <button
+                        type="submit"
+                        className={smallButton}
+                        aria-label={`Switch on ${s.name}`}
+                      >
                         Switch on
                       </button>
                     </form>

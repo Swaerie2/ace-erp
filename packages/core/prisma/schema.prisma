@@ -194,7 +194,7 @@ model Property {
   terrainNotes          String?
   frequency             ServiceFrequency?
   preferredDay          String?
-  /// Plain field for now; becomes price-list items in Module 2.
+  /// Plain field for now; replaced by the accepted quote's lines in Module 3.
   agreedMonthlyFeeCents Int?
   extrasNote            String?
   archivedAt            DateTime?
@@ -219,7 +219,7 @@ model Service {
   name        String
   description String
   kind        ServiceKind @default(CORE)
-  /// Display order on quotes. Ties (two added at the same moment) are broken by createdAt.
+  /// Display order on quotes. Ties (two added at the same moment) are broken by createdAt, then id.
   sortOrder   Int
   archivedAt  DateTime?
   createdAt   DateTime    @default(now())

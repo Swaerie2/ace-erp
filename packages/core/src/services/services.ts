@@ -7,10 +7,19 @@ import { logServiceEvent, type ServiceStore } from "./store";
 const NOT_FOUND = "That service could not be found.";
 const DUPLICATE = "A service with that name already exists.";
 
-/** Display order: by number, ties broken by when the service was added. */
+/** Thrown when a service name is already taken (ignoring upper/lower case). */
+export class DuplicateServiceNameError extends DomainError {
+  constructor() {
+    super(DUPLICATE);
+    this.name = "DuplicateServiceNameError";
+  }
+}
+
+/** Display order: by number, ties broken by when the service was added, then by id. */
 const ORDER: Prisma.ServiceOrderByWithRelationInput[] = [
   { sortOrder: "asc" },
   { createdAt: "asc" },
+  { id: "asc" },
 ];
 
 export async function listServices(
@@ -63,14 +72,13 @@ function isNameClash(error: unknown): boolean {
 }
 
 async function assertNameFree(store: ServiceStore, name: string, exceptId?: string): Promise<void> {
-  const clash = await store.service.findFirst({
-    where: {
-      name: { equals: name, mode: "insensitive" },
-      ...(exceptId ? { id: { not: exceptId } } : {}),
-    },
-    select: { id: true },
-  });
-  if (clash) throw new DomainError(DUPLICATE);
+  // Compared here, not by the database's case-insensitive match (ILIKE): that treats % and _ as
+  // wildcards and fails on a name ending in a backslash. The list is small (tens of rows).
+  const wanted = name.toLowerCase();
+  const all = await store.service.findMany({ select: { id: true, name: true } });
+  if (all.some((s) => s.id !== exceptId && s.name.toLowerCase() === wanted)) {
+    throw new DuplicateServiceNameError();
+  }
 }
 
 export async function createService(store: ServiceStore, actor: Actor, input: ServiceInput) {
@@ -88,7 +96,7 @@ export async function createService(store: ServiceStore, actor: Actor, input: Se
     });
   } catch (error) {
     // Two people adding the same name at the same moment: the database index catches the loser.
-    if (isNameClash(error)) throw new DomainError(DUPLICATE);
+    if (isNameClash(error)) throw new DuplicateServiceNameError();
     throw error;
   }
   await logServiceEvent(store, actor, "service.created", created.id, { kind: input.kind });
@@ -113,7 +121,7 @@ export async function updateService(
   try {
     await store.service.update({ where: { id }, data: input });
   } catch (error) {
-    if (isNameClash(error)) throw new DomainError(DUPLICATE);
+    if (isNameClash(error)) throw new DuplicateServiceNameError();
     throw error;
   }
   await logServiceEvent(store, actor, "service.updated", id, { changed });

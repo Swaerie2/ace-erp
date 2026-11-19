@@ -3,6 +3,7 @@
 import {
   archiveService,
   createService,
+  DuplicateServiceNameError,
   inTx,
   MANAGEMENT,
   moveService,
@@ -38,9 +39,12 @@ export async function saveServiceAction(_prev: FormState, formData: FormData): P
       else await createService(tx, actor, parsed.data);
     });
   } catch (error) {
+    if (error instanceof DuplicateServiceNameError) {
+      return { fieldErrors: { name: error.message }, values, nonce: Date.now() };
+    }
     return failure(error, values);
   }
-  redirect("/services");
+  redirect(values.fromArchived === "1" ? "/services?archived=1" : "/services");
 }
 
 export async function archiveServiceAction(formData: FormData): Promise<void> {

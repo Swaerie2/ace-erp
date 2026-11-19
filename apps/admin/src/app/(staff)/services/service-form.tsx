@@ -13,6 +13,7 @@ export type ServiceRow = {
   name: string;
   description: string;
   kind: string;
+  archived: boolean;
 };
 
 const KIND_OPTIONS = SERVICE_KINDS.map((kind) => ({
@@ -36,6 +37,7 @@ export function ServiceForm({ service }: { service?: ServiceRow }) {
   return (
     <form ref={formRef} action={action} className="mt-6 max-w-2xl space-y-6">
       {service ? <input type="hidden" name="serviceId" value={service.id} /> : null}
+      {service?.archived ? <input type="hidden" name="fromArchived" value="1" /> : null}
       <div key={state?.nonce ?? "initial"} className="space-y-4">
         <TextField
           label="Name"
@@ -68,7 +70,7 @@ export function ServiceForm({ service }: { service?: ServiceRow }) {
           {pending ? "Saving…" : service ? "Save changes" : "Add service"}
         </button>
         <Link
-          href="/services"
+          href={service?.archived ? "/services?archived=1" : "/services"}
           className="inline-flex min-h-10 items-center text-sm text-forest hover:underline"
         >
           Cancel

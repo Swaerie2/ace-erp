@@ -1,6 +1,6 @@
 # Module 2: Services catalogue (design)
 
-Status: Implemented and verified (branch module-2-services); awaiting owner merge. Date: 2026-11-19.
+Status: Implemented; real-browser check pending (branch module-2-services); awaiting owner merge. Date: 2026-11-19.
 
 ## Goal
 
@@ -70,7 +70,7 @@ quote's lines, in a migration written and approved then, keeping the amount hist
   staff under a toggle, and can be switched back on. Nothing that already used the service changes.
 - Editing a name or description affects future quotes only. Quotes will store their own copy of the
   wording (Module 3), so history never changes.
-- Reordering swaps a switched-on service with its neighbour (up or down) and renumbers the switched-on services 1, 2, 3 and so on. Two services added at the same moment may briefly share a number; ties are broken by when they were added, so the order is always well defined. A service switched back on goes to the end of the list.
+- Reordering swaps a switched-on service with its neighbour (up or down) and renumbers the switched-on services 1, 2, 3 and so on. Two services added at the same moment may briefly share a number; ties are broken by when they were added, then by id, so the order is always well defined. A service switched back on goes to the end of the list.
 - A save that changes nothing writes nothing (no audit line, no `updatedAt` change).
 - Every add, edit, reorder, switch-off and switch-on writes an audit line holding **field names and
   ids only**, never the text typed (same rule as customers).
@@ -108,7 +108,9 @@ One page, `/services`, linked from the staff menu for OWNER and MANAGER only.
 - Unit tests for the zod schema (name and description length, kind, trimming).
 - Database tests (`npm run test:db`, rolled-back transactions, dev database only): create, edit,
   no-op save, duplicate name ignoring case, reorder up/down at the ends, switch off/on, audit lines
-  contain field names only, crew and signed-out actors refused, seed rows present.
+  contain field names only, crew actors refused. The seven seed rows were checked by hand when the
+  migration was applied (a database test on them would break if staff rename them). Signed-out
+  visitors are handled by `requireStaff` in the app layer, not by a core test.
 - Real-browser check on a throwaway manager and crew account, at phone width: add, edit, reorder,
   switch off and on, duplicate name error, crew cannot reach the page.
 

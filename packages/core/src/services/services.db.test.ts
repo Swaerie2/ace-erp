@@ -6,6 +6,7 @@ import { serviceSchema } from "./schemas";
 import {
   archiveService,
   createService,
+  DuplicateServiceNameError,
   getService,
   listServices,
   moveService,
@@ -60,6 +61,57 @@ describe.skipIf(!dbTestsEnabled)("services data layer", () => {
       await expect(
         createService(tx, manager, { ...data, name: data.name.toLowerCase() }),
       ).rejects.toThrow("A service with that name already exists.");
+    });
+  });
+
+  it("treats % and _ in a name as plain characters, not wildcards", async () => {
+    await withRollback(async (tx) => {
+      const t = token();
+      await createService(tx, manager, input({ name: `Ab ${t}` }));
+      // With a LIKE-style comparison, "A_ <t>" would match "Ab <t>" and be refused.
+      const { id } = await createService(tx, manager, input({ name: `A_ ${t}` }));
+      expect((await getService(tx, manager, id))?.name).toBe(`A_ ${t}`);
+      const { id: other } = await createService(tx, manager, input({ name: `100% ${t}` }));
+      expect(other).toBeTruthy();
+    });
+  });
+
+  it("accepts a name that ends in a backslash", async () => {
+    await withRollback(async (tx) => {
+      const name = `Edge ${token()}\\`;
+      const { id } = await createService(tx, manager, input({ name }));
+      expect((await getService(tx, manager, id))?.name).toBe(name);
+      await expect(createService(tx, manager, input({ name }))).rejects.toBeInstanceOf(
+        DuplicateServiceNameError,
+      );
+    });
+  });
+
+  it("refuses a case-only duplicate with a DuplicateServiceNameError", async () => {
+    await withRollback(async (tx) => {
+      const data = input({ name: `Casey ${token()}` });
+      await createService(tx, manager, data);
+      const attempt = createService(tx, manager, { ...data, name: data.name.toUpperCase() });
+      await expect(attempt).rejects.toBeInstanceOf(DuplicateServiceNameError);
+      await expect(attempt).rejects.toBeInstanceOf(DomainError);
+      await expect(attempt).rejects.toThrow("A service with that name already exists.");
+    });
+  });
+
+  it("moves a restored service up and renumbers the switched-on services", async () => {
+    await withRollback(async (tx) => {
+      const { id: a } = await createService(tx, manager, input());
+      const { id: b } = await createService(tx, manager, input());
+      const { id: c } = await createService(tx, manager, input());
+      await archiveService(tx, manager, a);
+      await restoreService(tx, manager, a);
+      const lastThree = async () => (await listServices(tx, manager)).slice(-3).map((s) => s.id);
+      expect(await lastThree()).toEqual([b, c, a]);
+
+      await moveService(tx, manager, a, "up");
+      expect(await lastThree()).toEqual([b, a, c]);
+      const numbers = (await listServices(tx, manager)).map((s) => s.sortOrder);
+      expect(numbers).toEqual(numbers.map((_, index) => index + 1));
     });
   });
 
