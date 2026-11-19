@@ -11,6 +11,7 @@ import { z } from "zod";
 import { toActor } from "@/lib/actor";
 import { requireStaff } from "@/lib/auth";
 import { first } from "@/lib/search-params";
+import { activateCustomerAction } from "../actions";
 import { ActivityTab } from "./activity-tab";
 import { ContactsTab } from "./contacts-tab";
 import { CrewView } from "./crew-view";
@@ -63,6 +64,18 @@ export default async function CustomerPage({
         <span className="rounded-full bg-forest/10 px-2.5 py-1 text-xs font-semibold text-forest">
           {customer.status.toLowerCase()}
         </span>
+        {customer.status === "LEAD" || customer.status === "PAUSED" ? (
+          // One click, from any tab. Archived customers must be restored first, so no button there.
+          <form action={activateCustomerAction}>
+            <input type="hidden" name="id" value={customer.id} />
+            <button
+              type="submit"
+              className="rounded-full bg-forest px-4 py-1.5 font-display text-xs font-semibold text-cream transition-colors hover:bg-forest-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest"
+            >
+              {customer.status === "LEAD" ? "Mark as active" : "Resume"}
+            </button>
+          </form>
+        ) : null}
       </div>
 
       <nav

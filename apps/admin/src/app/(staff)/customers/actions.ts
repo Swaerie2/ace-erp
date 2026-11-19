@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  activateCustomer,
   addContact,
   anonymiseCustomer,
   addProperty,
@@ -118,6 +119,19 @@ export async function restoreCustomerAction(formData: FormData): Promise<void> {
   const id = idSchema.parse(formData.get("id"));
   try {
     await inTx((tx) => restoreCustomer(tx, actor, id));
+  } catch (error) {
+    failure(error);
+  }
+  redirect(`/customers/${id}`);
+}
+
+/** One-click "Mark as active" (leads) or "Resume" (paused customers). */
+export async function activateCustomerAction(formData: FormData): Promise<void> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const id = idSchema.parse(formData.get("id"));
+  try {
+    await inTx((tx) => activateCustomer(tx, actor, id));
   } catch (error) {
     failure(error);
   }

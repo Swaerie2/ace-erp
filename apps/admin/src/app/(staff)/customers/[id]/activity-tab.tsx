@@ -8,6 +8,7 @@ const label: Record<string, string> = {
   "customer.updated": "Details changed",
   "customer.archived": "Archived",
   "customer.restored": "Restored",
+  "customer.activated": "Marked as active",
   "customer.contact_added": "Contact added",
   "customer.contact_updated": "Contact changed",
   "customer.contact_removed": "Contact removed",
