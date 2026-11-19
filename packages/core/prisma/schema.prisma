@@ -1,7 +1,7 @@
 // ACE Garden Services: core database schema.
 //
-// Modules 0 and 1: organisation settings, staff users, audit log, customers, contacts, properties.
-// Services arrive in Module 2, quotes in Module 3, and so on.
+// Modules 0, 1 and 2: organisation settings, staff users, audit log, customers, contacts,
+// properties, services. Quotes arrive in Module 3, and so on.
 //
 // Rules for every future model:
 //   * Money is stored as whole cents (Int), never floats.
@@ -205,4 +205,26 @@ model Property {
 
   @@index([customerId])
   @@map("properties")
+}
+
+enum ServiceKind {
+  CORE
+  OPTIONAL_EXTRA
+}
+
+/// A service ACE sells. There are no prices here: every client is quoted after a site visit
+/// (Module 3). Switched off by setting archivedAt, never deleted, so old quotes keep their wording.
+model Service {
+  id          String      @id @default(uuid()) @db.Uuid
+  name        String
+  description String
+  kind        ServiceKind @default(CORE)
+  /// Display order on quotes. Ties (two added at the same moment) are broken by createdAt.
+  sortOrder   Int
+  archivedAt  DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([sortOrder])
+  @@map("services")
 }

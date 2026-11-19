@@ -8,7 +8,7 @@ export type Store = Pick<Db, "customer" | "contact" | "property" | "auditLog" | 
 
 /** Runs several writes as one all-or-nothing step. */
 export function inTx<T>(
-  fn: (tx: Store) => Promise<T>,
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
   opts: { timeoutMs?: number } = {},
 ): Promise<T> {
   return getDb().$transaction((tx) => fn(tx), {
