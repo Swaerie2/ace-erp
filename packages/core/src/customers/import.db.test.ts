@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { dbTestsEnabled, withRollback } from "../testing/rollback";
-import { ForbiddenError, type Actor } from "./access";
+import { DomainError, ForbiddenError, type Actor } from "./access";
 import type { RawImportRow } from "./csv";
 import { createCustomer } from "./customers";
 import { commitImport, prepareImport } from "./import";
@@ -53,6 +53,26 @@ describe.skipIf(!dbTestsEnabled)("customer import", () => {
       expect(preview.create.map((r) => r.customer.displayName)).toEqual(["New A", "New B"]);
       expect(preview.duplicates.map((d) => d.line)).toEqual([3, 4]);
       expect(preview.errors.map((e) => e.line)).toEqual([5]);
+    });
+  });
+
+  it("reports the spreadsheet line numbers it is given", async () => {
+    await withRollback(async (tx) => {
+      await createCustomer(tx, manager, {
+        customer: customerSchema.parse({ type: "PERSON", displayName: "Lines Existing" }),
+        contact: contactSchema.parse({ name: "L", email: "lines@example.com" }),
+      });
+      const rows = [
+        row({ display_name: "Lines Dup", email: "lines@example.com" }),
+        row({ display_name: "Lines Bad", email: "not-an-email" }),
+        row({ display_name: "Lines Ok", email: "linesok@example.com" }),
+      ];
+      const preview = await prepareImport(tx, manager, rows, [4, 9, 12]);
+      expect(preview.duplicates.map((d) => d.line)).toEqual([4]);
+      expect(preview.errors.map((e) => e.line)).toEqual([9]);
+      expect(preview.create.map((r) => r.line)).toEqual([12]);
+      await expect(prepareImport(tx, manager, rows, [2, 3])).rejects.toBeInstanceOf(DomainError);
+      await expect(commitImport(tx, manager, rows, [2])).rejects.toBeInstanceOf(DomainError);
     });
   });
 

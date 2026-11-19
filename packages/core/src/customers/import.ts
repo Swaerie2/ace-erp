@@ -17,16 +17,20 @@ const key = (name: string, address: string) =>
 /**
  * Sorts spreadsheet rows into: will be created, looks like a duplicate (skipped) and has errors
  * (skipped). Changes nothing. Also used by `commitImport`, so what you preview is what you get.
- * Line numbers match the spreadsheet: the header is line 1, the first data row is line 2.
+ * Line numbers match the spreadsheet (header = line 1). Pass the `lines` that `parseCsvText`
+ * returned so blank rows in the file do not shift them; without `lines`, row i is line i + 2.
  */
 export async function prepareImport(
   store: Store,
   actor: Actor,
   raw: RawImportRow[],
+  lines?: number[],
 ): Promise<ImportPreview> {
   assertRole(actor, MANAGEMENT);
   if (raw.length > MAX_IMPORT_ROWS)
     throw new DomainError(`Imports are limited to ${MAX_IMPORT_ROWS} rows.`);
+  if (lines && lines.length !== raw.length)
+    throw new DomainError("The row numbers do not match the rows.");
 
   const contacts = await store.contact.findMany({
     where: { customer: { anonymisedAt: null } },
@@ -47,7 +51,7 @@ export async function prepareImport(
 
   const preview: ImportPreview = { create: [], duplicates: [], errors: [] };
   raw.forEach((rawRow, index) => {
-    const line = index + 2; // line 1 is the header
+    const line = lines?.[index] ?? index + 2; // line 1 is the header
     const mapped = mapImportRow(rawRow, line);
     if (!mapped.ok) {
       preview.errors.push({ line, errors: mapped.errors });
@@ -79,8 +83,13 @@ export async function prepareImport(
  * give `inTx` a long `timeoutMs` for big files (the 15 s default is too short for 2,000 rows).
  * With the plain connection, a failure half way would leave the earlier inserts in place.
  */
-export async function commitImport(store: Store, actor: Actor, raw: RawImportRow[]) {
-  const preview = await prepareImport(store, actor, raw);
+export async function commitImport(
+  store: Store,
+  actor: Actor,
+  raw: RawImportRow[],
+  lines?: number[],
+) {
+  const preview = await prepareImport(store, actor, raw, lines);
   const rows = preview.create.map((row) => ({ id: randomUUID(), row }));
 
   if (rows.length > 0) {

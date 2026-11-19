@@ -48,6 +48,20 @@ describe("parseCsvText", () => {
     expect("rows" in result && result.rows[0]?.display_name).toBe("Smith, J");
     expect("rows" in result && result.rows[0]?.email).toBe("j@example.com");
   });
+  it("keeps spreadsheet row numbers when blank rows are skipped", () => {
+    const csv = "display_name,email\nA,a@example.com\n\nB,b@example.com\n,\nC,c@example.com\n\n,\n";
+    const result = parseCsvText(csv);
+    expect("rows" in result && result.rows.map((r) => r.display_name)).toEqual(["A", "B", "C"]);
+    expect("lines" in result && result.lines).toEqual([2, 4, 6]);
+  });
+  it("counts a multi-line quoted cell as one row", () => {
+    const csv = 'display_name,notes\nA,"line one\nline two"\nB,x\n';
+    const result = parseCsvText(csv);
+    expect("lines" in result && result.lines).toEqual([2, 3]);
+  });
+  it("says there are no rows when only blank rows follow the header", () => {
+    expect("error" in parseCsvText("display_name,email\n\n,\n")).toBe(true);
+  });
   it("needs a display_name column and at least one row", () => {
     expect("error" in parseCsvText("email\nx@example.com\n")).toBe(true);
     expect("error" in parseCsvText("display_name\n")).toBe(true);

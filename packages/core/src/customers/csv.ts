@@ -37,10 +37,33 @@ export const IMPORT_TEMPLATE = `${IMPORT_COLUMNS.join(",")}\nperson,Sample Custo
 
 export type RawImportRow = Record<string, string>;
 
-export function parseCsvText(text: string): { rows: RawImportRow[] } | { error: string } {
-  const parsed = Papa.parse<Record<string, string | undefined>>(text.replace(/^\uFEFF/, ""), {
+/** Comma, semicolon, tab or pipe: whichever appears most in the header line (comma if none). */
+function guessDelimiter(text: string): string {
+  const header = text.split(/\r?\n/, 1)[0] ?? "";
+  let best = ",";
+  let bestCount = 0;
+  for (const candidate of [",", ";", "\t", "|"]) {
+    const count = header.split(candidate).length - 1;
+    if (count > bestCount) {
+      best = candidate;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
+/**
+ * Reads CSV text. `lines[i]` is the spreadsheet row number of `rows[i]` (header = 1). Blank rows
+ * are left out of `rows` but still count, so the numbers match what the user sees in their
+ * spreadsheet. Pass `lines` on to `prepareImport` / `commitImport` so errors name the right row.
+ */
+export function parseCsvText(
+  text: string,
+): { rows: RawImportRow[]; lines: number[] } | { error: string } {
+  const clean = text.replace(/^\uFEFF/, "");
+  const parsed = Papa.parse<Record<string, string | undefined>>(clean, {
     header: true,
-    skipEmptyLines: "greedy",
+    delimiter: guessDelimiter(clean),
     transformHeader: (h) => h.trim().toLowerCase(),
   });
   if (parsed.errors.some((e) => e.type === "Quotes")) {
@@ -54,18 +77,24 @@ export function parseCsvText(text: string): { rows: RawImportRow[] } | { error: 
       error: 'The file needs a "display_name" column. Download the template to see the layout.',
     };
   }
-  if (parsed.data.length === 0) return { error: "The file has no rows." };
-  if (parsed.data.length > MAX_IMPORT_ROWS) {
+  const rows: RawImportRow[] = [];
+  const lines: number[] = [];
+  parsed.data.forEach((r, index) => {
+    const out: RawImportRow = {};
+    for (const column of IMPORT_COLUMNS) out[column] = (r[column] ?? "").trim();
+    // A row with every cell empty is blank: not data, but it still uses up a row number.
+    const blank = Object.values(r).every((v) => (typeof v === "string" ? v : "").trim() === "");
+    if (blank) return;
+    rows.push(out);
+    lines.push(index + 2); // line 1 is the header
+  });
+  if (rows.length === 0) return { error: "The file has no rows." };
+  if (rows.length > MAX_IMPORT_ROWS) {
     return {
       error: `The file has more than ${MAX_IMPORT_ROWS} rows. Split it into smaller files.`,
     };
   }
-  const rows = parsed.data.map((r) => {
-    const out: RawImportRow = {};
-    for (const column of IMPORT_COLUMNS) out[column] = (r[column] ?? "").trim();
-    return out;
-  });
-  return { rows };
+  return { rows, lines };
 }
 
 export type MappedRow = {
