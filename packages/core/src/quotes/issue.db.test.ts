@@ -89,6 +89,56 @@ describe.skipIf(!dbTestsEnabled)("issuing quotes", () => {
     });
   });
 
+  it("keeps an archived service only if it was included, and takes catalogue renames and order", async () => {
+    await withRollback(async (tx) => {
+      const max = await tx.service.aggregate({
+        _max: { sortOrder: true },
+        _min: { sortOrder: true },
+      });
+      const top = max._max.sortOrder ?? 0;
+      const make = (label: string, sortOrder: number) =>
+        tx.service.create({ data: { name: `${label} ${token()}`, description: "Old", sortOrder } });
+      const keptArchived = await make("Included then archived", top + 1);
+      const droppedArchived = await make("Excluded then archived", top + 2);
+      const renamed = await make("Renamed later", top + 3);
+
+      const c = await makeCustomer(tx);
+      const { id } = await createQuote(tx, manager, c);
+      const draft = await findQuote(tx, id);
+      await fillDraft(tx, id, {
+        scope: draft.scopeItems.map((s) => ({
+          serviceId: s.serviceId,
+          included: s.serviceId === keptArchived.id,
+        })),
+      });
+
+      await tx.service.update({ where: { id: keptArchived.id }, data: { archivedAt: new Date() } });
+      await tx.service.update({
+        where: { id: droppedArchived.id },
+        data: { archivedAt: new Date() },
+      });
+      const newName = `Renamed now ${token()}`;
+      await tx.service.update({
+        where: { id: renamed.id },
+        data: {
+          name: newName,
+          description: "New wording",
+          sortOrder: (max._min.sortOrder ?? 0) - 1,
+        },
+      });
+
+      await issueQuote(tx, manager, id);
+      const scope = (await findQuote(tx, id)).scopeItems;
+      expect(scope.find((s) => s.serviceId === keptArchived.id)).toMatchObject({ included: true });
+      expect(scope.some((s) => s.serviceId === droppedArchived.id)).toBe(false);
+      const row = scope.find((s) => s.serviceId === renamed.id);
+      expect(row).toMatchObject({ name: newName, description: "New wording", sortOrder: 1 });
+      expect(scope.map((s) => s.sortOrder).sort((a, b) => a - b)).toEqual(
+        scope.map((_, index) => index + 1),
+      );
+    });
+  });
+
   it("allocates running numbers per year without gaps or repeats", async () => {
     await withRollback(async (tx) => {
       expect(await allocateQuoteNumber(tx, 2098)).toBe(1);
@@ -127,7 +177,16 @@ describe.skipIf(!dbTestsEnabled)("issuing quotes", () => {
         orderBy: { at: "asc" },
       });
       expect(audit.map((a) => a.action)).toEqual(["quote.created", "quote.issued"]);
-      expect(JSON.stringify(audit)).not.toContain(issued.contactName);
+      const contact = await tx.contact.findFirstOrThrow({
+        where: { customerId: issued.customerId },
+      });
+      const auditText = JSON.stringify(audit);
+      expect(auditText).not.toContain(issued.contactName);
+      expect(contact.email).toBeTruthy();
+      expect(contact.phone).toBeTruthy();
+      expect(auditText).not.toContain(contact.email ?? "");
+      expect(auditText).not.toContain(contact.phone ?? "");
+      expect(auditText).not.toContain("1 Quote Street");
     });
   });
 });
@@ -153,6 +212,51 @@ describe.skipIf(!dbTestsEnabled)("revising, withdrawing and sending", () => {
       await expect(reviseQuote(tx, manager, original.id)).rejects.toThrow(
         "This quote cannot be revised.",
       );
+    });
+  });
+
+  it.each(["DECLINED", "ACCEPTED"] as const)(
+    "leaves a %s source as it is when its revision is issued",
+    async (status) => {
+      await withRollback(async (tx) => {
+        const original = await makeIssued(tx);
+        await tx.quote.update({
+          where: { id: original.id },
+          data:
+            status === "DECLINED"
+              ? { status, declinedAt: new Date() }
+              : { status, acceptedAt: new Date() },
+        });
+        const { id: draftId } = await reviseQuote(tx, manager, original.id);
+        const reissued = await issueQuote(tx, manager, draftId);
+        expect(reissued.reference).toBe(`${original.reference} R2`);
+        expect((await findQuote(tx, original.id)).status).toBe(status);
+        expect((await findQuote(tx, draftId)).status).toBe("ISSUED");
+        const audit = await tx.auditLog.findMany({ where: { entityId: original.id } });
+        expect(audit.map((a) => a.action)).not.toContain("quote.replaced");
+      });
+    },
+  );
+
+  it("allows only one open revision draft across a whole numbered quote", async () => {
+    await withRollback(async (tx) => {
+      const original = await makeIssued(tx);
+      await tx.quote.update({
+        where: { id: original.id },
+        data: { status: "DECLINED", declinedAt: new Date() },
+      });
+      const { id: r2 } = await reviseQuote(tx, manager, original.id);
+      await issueQuote(tx, manager, r2);
+      // The declined original and its issued R2 are both open to revision, but only one draft at a time.
+      const { id: r3 } = await reviseQuote(tx, manager, r2);
+      await expect(reviseQuote(tx, manager, original.id)).rejects.toThrow(
+        "There is already a draft revision of this quote.",
+      );
+      await expect(reviseQuote(tx, manager, r2)).rejects.toThrow(
+        "There is already a draft revision of this quote.",
+      );
+      const reissued = await issueQuote(tx, manager, r3);
+      expect(reissued.reference).toBe(`${original.reference} R3`);
     });
   });
 

@@ -105,6 +105,13 @@ export async function issueQuote(
   const problems = validateForIssue({ validUntil, scope, lines: quote.lines }, todaySA());
   if (problems.length > 0) throw new QuoteIssueError(problems);
 
+  const contacts = await store.contact.findMany({
+    where: { customerId: quote.customerId },
+    orderBy: { createdAt: "asc" },
+  });
+  const contact = contacts.find((c) => c.receivesQuotes) ?? contacts[0];
+  if (!contact) throw new DomainError("This customer has no contact to address the quote to.");
+
   let numberYear: number | null;
   let numberSeq: number | null;
   if (quote.revisionOfId) {
@@ -121,12 +128,6 @@ export async function issueQuote(
     throw new DomainError("The quote this revises has no number.");
   }
 
-  const contacts = await store.contact.findMany({
-    where: { customerId: quote.customerId },
-    orderBy: { createdAt: "asc" },
-  });
-  const contact = contacts.find((c) => c.receivesQuotes) ?? contacts[0];
-  if (!contact) throw new DomainError("This customer has no contact to address the quote to.");
   const siteAddress = [property.addressLine1, property.addressLine2, property.suburb, property.city]
     .filter(Boolean)
     .join(", ");
@@ -175,13 +176,13 @@ export async function issueQuote(
   });
 
   if (quote.revisionOfId) {
-    const previous = await store.quote.findUnique({
-      where: { id: quote.revisionOfId },
-      select: { id: true, status: true },
+    // Only a quote that is still ISSUED becomes REPLACED; accepted, declined or withdrawn ones stay.
+    const replaced = await store.quote.updateMany({
+      where: { id: quote.revisionOfId, status: "ISSUED" },
+      data: { status: "REPLACED" },
     });
-    if (previous?.status === "ISSUED") {
-      await store.quote.update({ where: { id: previous.id }, data: { status: "REPLACED" } });
-      await logQuoteEvent(store, actor, "quote.replaced", previous.id);
+    if (replaced.count === 1) {
+      await logQuoteEvent(store, actor, "quote.replaced", quote.revisionOfId);
     }
   }
   await logQuoteEvent(store, actor, "quote.issued", id, { revision: quote.revision });
@@ -205,8 +206,15 @@ export async function reviseQuote(
   await lockQuote(store, id);
   const source = await findQuote(store, id);
   if (!allowed.includes(source.status)) throw new DomainError("This quote cannot be revised.");
+  // One open revision draft per number chain, so two drafts can never claim the same revision number.
   const open = await store.quote.findFirst({
-    where: { revisionOfId: id, status: "DRAFT" },
+    where: {
+      status: "DRAFT",
+      OR: [
+        { revisionOfId: id },
+        { revisionOf: { numberYear: source.numberYear, numberSeq: source.numberSeq } },
+      ],
+    },
     select: { id: true },
   });
   if (open) throw new DomainError("There is already a draft revision of this quote.");
@@ -280,6 +288,9 @@ export async function markSent(
     throw new DomainError("Only an issued quote can be marked as sent.");
   }
   await lockQuote(store, id);
+  if ((await findQuote(store, id)).status !== "ISSUED") {
+    throw new DomainError("Only an issued quote can be marked as sent.");
+  }
   await store.quote.update({ where: { id }, data: { sentAt: new Date(), sentMethod: method } });
   await logQuoteEvent(store, actor, "quote.sent", id, { method });
 }
