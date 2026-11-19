@@ -91,7 +91,9 @@ export default async function ServicesPage({ searchParams }: { searchParams: Pro
                     </span>
                   ) : null}
                 </p>
-                <p className="break-words text-sm text-charcoal/70">{s.description}</p>
+                <p className="whitespace-pre-line break-words text-sm text-charcoal/70">
+                  {s.description}
+                </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <form action={moveServiceAction}>
@@ -161,7 +163,7 @@ export default async function ServicesPage({ searchParams }: { searchParams: Pro
                         Switched off
                       </span>
                     </p>
-                    <p className="break-words text-sm">{s.description}</p>
+                    <p className="whitespace-pre-line break-words text-sm">{s.description}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Link
