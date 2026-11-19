@@ -43,7 +43,7 @@ Each module is built, tested and approved before the next begins.
 | --- | ---------------------------- | --------------------------------------------------------------------------------- |
 | 0   | Foundation                   | Project, checks, staff sign-in and roles, audit log, backups, email, error alerts |
 | 1   | Customers                    | Client profiles, properties, contacts, notes, import from a spreadsheet           |
-| 2   | Services and prices          | The price list quotes are built from                                              |
+| 2   | Services catalogue           | The list of services quotes are built from (no prices: each client is quoted)     |
 | 3   | Quotes                       | Create, PDF, email, client link to accept, decline or ask for changes             |
 | 4   | Client portal and onboarding | Welcome and registration after acceptance, client sign-in, view quotes            |
 | 5   | Invoices and statements      | EFT invoices with payment reference, mark paid, proof of payment, statements      |
@@ -57,6 +57,16 @@ Requirements carried forward to later modules:
   the staff "Mark as active" button on the customer page uses it). The change is recorded as
   "activated by quote acceptance". Only leads convert automatically; if a paused or archived
   customer accepts a quote, it is flagged to staff instead of changing silently.
+- **Module 3 (Quotes): phone-first quote builder with scope.** Built for use at a site visit on a
+  phone. Every active service is a row with an on/off switch; switched on rows take once-off or
+  recurring, visit frequency (weekly, every two weeks, monthly; always billed as one monthly
+  amount), price and a note; switched off rows show as "Not included, quoted separately on
+  request". Drafts save as you go; decide how it behaves with no signal on site. Each quote line
+  stores a copy of the service wording, and acceptance freezes the scope as the customer's agreed
+  scope. Work requested outside that scope becomes an extra-work quote. Module 3 also replaces the
+  temporary property fee and extras fields (migration to be approved then).
+- **Module 6 (Jobs): crew see the agreed scope** for each property, so included work and extras
+  are clear on the day.
 
 ## Security and privacy rules (POPIA)
 
