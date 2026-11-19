@@ -84,6 +84,55 @@ These apply to every module. A module is not finished until it follows all of th
 - Accounts are created only by `npm run staff:create` (and later by an owner inside the app).
   Public sign-up is switched off in Supabase.
 
+## Customers (Module 1)
+
+- **Tables:** `customers`, `contacts` and `properties`, with the same hardening as every table
+  (Row Level Security on, no public access). Customers and properties are archived, never deleted.
+  The only removals are anonymising a customer (below) and removing a contact, which deletes that
+  contact row.
+- **Customer numbers** (`C-0001` style) come from a database sequence. Gaps are normal: a number
+  used inside a rolled-back transaction (for example by the database tests) is not handed out
+  again.
+- **Roles are enforced in `packages/core/src/customers/`, not in the screens.** OWNER and MANAGER
+  see everything; export and anonymise are OWNER only. CREW get a separate view with a fixed list
+  of columns in `views.ts` (customer name, property address, map link, access notes). The crew
+  list also leaves out leads and archived customers. A new screen cannot leak a field by accident,
+  because the crew query never selects the restricted columns.
+- **Browser-safe entry `@ace/core/client`.** It holds only validation rules and types. The rule:
+  client components never import values from `@ace/core` (that pulls the database code into the
+  browser); they import from `@ace/core/client` instead.
+- **Audit lines hold field names and ids only, never personal values** (for example "changed:
+  email, phone" and the customer id). The reason: the audit log can never be edited, so if it held
+  names or emails, anonymising a customer would leave them behind. A save that changes nothing
+  writes no audit line.
+- **Anonymise** (OWNER only) replaces a customer's personal details and cannot be undone. The owner
+  must type the customer number to confirm. It writes the contacts and properties first and the
+  customer row last, under a lock on the customer row, so a half-finished run can be retried and an
+  edit cannot slip in at the same time. Money amounts are kept. Archived and anonymised customers
+  cannot be edited. A guard test, `privacy-coverage.test.ts`, fails whenever a new personal column
+  is added to a customer table until someone decides how anonymise treats it.
+- **CSV import:** at most 2 MB and 2,000 rows. The file is read and previewed first, then confirmed.
+  Duplicates (same email, same phone, or same name and address) are skipped. Errors are reported by
+  spreadsheet row number and skipped. The file itself is never stored, and the audit line records
+  counts only.
+- **Small decisions that matter:** the customer page tab bar scrolls sideways on phones; phone
+  numbers are stored in `+27` form; emails are stored in lowercase.
+
+### Known limitations and follow-ups
+
+- Removing a contact and archiving a property have no "are you sure" step. Removing a contact
+  deletes it for good. Archived properties have no screen to bring them back.
+- Exporting a customer is a plain link (a GET request) that writes one audit line each time it is
+  opened.
+- Attempts that are refused (for example a crew member typing a restricted address) are not written
+  to the audit log.
+- The database tests need a real development database, so CI does not run them. Run
+  `npm run test:db` yourself before merging.
+- A CSV with more than about 2 MB of non-English (non-ASCII) text may fail at the confirm step with
+  a body-size error.
+- Real customer numbers start after the numbers the tests have used up in the development
+  database. Use a fresh live database for real data so the numbers start at `C-0001`.
+
 ## Working agreement
 
 - Small steps. One module at a time. Nothing goes live without the owner approving it.

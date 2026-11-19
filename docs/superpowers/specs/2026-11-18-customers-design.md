@@ -1,6 +1,6 @@
 # Module 1: Customers (design)
 
-Status: awaiting owner review. Date: 2026-11-18.
+Status: Implemented and verified (branch module-1-customers); awaiting owner merge. Date: 2026-11-18.
 
 ## Goal
 
@@ -117,6 +117,12 @@ accept `082 123 4567` or `+27 82 123 4567` and are stored as `+27821234567`.
 - Browser tests with made-up customers only: add, search, edit, archive and restore, import with
   good, duplicate and bad rows, and a CREW test account that cannot reach fees or emails even by
   typing the URL or calling the action directly.
+- The database tests run through `npm run test:db`, against the development database inside
+  transactions that always roll back. `npm run test` skips them, so CI (which has no database) does
+  too.
+- The browser tests above were done as a real-browser end-to-end pass, signed in as a throwaway
+  owner, manager and crew account with made-up customers only. The throwaway accounts and customers
+  were removed afterwards.
 - CI runs the checks, tests and build on every push, as today.
 
 ## Decisions to confirm at review
@@ -124,3 +130,7 @@ accept `082 123 4567` or `+27 82 123 4567` and are stored as `+27821234567`.
 1. Customers are archived, not deleted; only anonymise removes personal details.
 2. CREW never sees fees, emails, phones or billing.
 3. Fee and extras are simple fields now and move into the price list in Module 2.
+4. Audit lines hold field names and ids only, never personal values, so anonymising leaves nothing
+   behind in the append-only log.
+5. The crew list excludes leads and archived customers. Archived and anonymised customers cannot be
+   edited.
