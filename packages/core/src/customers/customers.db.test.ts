@@ -185,6 +185,56 @@ describe.skipIf(!dbTestsEnabled)("customers data layer", () => {
     });
   });
 
+  it("crew reads check the actor's role", async () => {
+    await withRollback(async (tx) => {
+      const key = `crewrole${token()}`;
+      const { id } = await createCustomer(tx, manager, {
+        customer: customer({ displayName: `${key} Person` }),
+        contact: contact(),
+        property: property(`${key} Role Street`),
+      });
+      const stranger = { id: randomUUID(), role: "CLIENT" as never } satisfies Actor;
+      await expect(listCustomersForCrew(tx, stranger, { q: key })).rejects.toBeInstanceOf(
+        ForbiddenError,
+      );
+      await expect(getCustomerForCrew(tx, stranger, id)).rejects.toBeInstanceOf(ForbiddenError);
+      for (const actor of [manager, crew, { id: randomUUID(), role: "OWNER" as const }]) {
+        expect((await listCustomersForCrew(tx, actor, { q: key })).items).toHaveLength(1);
+        expect((await getCustomerForCrew(tx, actor, id))?.id).toBe(id);
+      }
+    });
+  });
+
+  it("crew search ignores archived properties, contact details, and hides leads and archived customers", async () => {
+    await withRollback(async (tx) => {
+      const key = `crewsearch${token()}`;
+      const c = contact();
+      const { id } = await createCustomer(tx, manager, {
+        customer: customer({ displayName: `${key} Person` }),
+        contact: c,
+        property: property(`${key} Live Street`),
+      });
+      const old = await addProperty(tx, manager, id, property(`${key}old Gone Street`));
+      expect((await listCustomersForCrew(tx, crew, { q: `${key}old` })).items).toHaveLength(1);
+      await archiveProperty(tx, manager, old.id);
+      expect((await listCustomersForCrew(tx, crew, { q: `${key}old` })).items).toHaveLength(0);
+      expect((await listCustomersForCrew(tx, crew, { q: `${key} Live` })).items).toHaveLength(1);
+
+      // Crew cannot find a customer by contact details.
+      expect((await listCustomersForCrew(tx, crew, { q: c.email ?? "x" })).items).toHaveLength(0);
+      expect((await listCustomersForCrew(tx, crew, { q: c.phone ?? "x" })).items).toHaveLength(0);
+
+      // Leads and archived customers are not visible to crew at all.
+      const lead = await createCustomer(tx, manager, {
+        customer: customer({ displayName: `${key} Lead`, status: "LEAD" }),
+        contact: contact(),
+      });
+      expect(await getCustomerForCrew(tx, crew, lead.id)).toBeNull();
+      await archiveCustomer(tx, manager, id);
+      expect(await getCustomerForCrew(tx, crew, id)).toBeNull();
+    });
+  });
+
   it("finds duplicate contacts by email or phone", async () => {
     await withRollback(async (tx) => {
       const c = contact();

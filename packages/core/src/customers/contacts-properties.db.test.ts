@@ -99,6 +99,40 @@ describe.skipIf(!dbTestsEnabled)("contacts and properties", () => {
     });
   });
 
+  it("archiving an archived property is a no-op, and an archived property cannot be edited", async () => {
+    await withRollback(async (tx) => {
+      const { id } = await createCustomer(tx, manager, base());
+      const input = { label: "Cottage", addressLine1: "2 Test Road" };
+      const p = await addProperty(tx, manager, id, propertySchema.parse(input));
+      await archiveProperty(tx, manager, p.id);
+      const archived = await tx.property.findUnique({ where: { id: p.id } });
+      const auditBefore = await tx.auditLog.count({
+        where: { entityId: id, action: "customer.property_archived" },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 15));
+
+      await archiveProperty(tx, manager, p.id);
+      const again = await tx.property.findUnique({ where: { id: p.id } });
+      expect(again?.archivedAt?.getTime()).toBe(archived?.archivedAt?.getTime());
+      expect(again?.updatedAt.getTime()).toBe(archived?.updatedAt.getTime());
+      expect(
+        await tx.auditLog.count({ where: { entityId: id, action: "customer.property_archived" } }),
+      ).toBe(auditBefore);
+
+      await expect(
+        updateProperty(
+          tx,
+          manager,
+          p.id,
+          propertySchema.parse({ ...input, addressLine1: "3 Other Road" }),
+        ),
+      ).rejects.toThrow("This property is archived.");
+      expect((await tx.property.findUnique({ where: { id: p.id } }))?.addressLine1).toBe(
+        "2 Test Road",
+      );
+    });
+  });
+
   it("a no-op contact or property save writes nothing; a real change locks the customer and audits", async () => {
     await withRollback(async (tx) => {
       const { id } = await createCustomer(tx, manager, base());

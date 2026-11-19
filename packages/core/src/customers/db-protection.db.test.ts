@@ -14,6 +14,27 @@ describe.skipIf(!dbTestsEnabled)("customers database protections", () => {
     }
   });
 
+  it("has row level security on, and no direct read access for the public roles", async () => {
+    await withRollback(async (tx) => {
+      const tables = ["customers", "contacts", "properties"];
+      const rls = await tx.$queryRaw<{ relname: string; relrowsecurity: boolean }[]>`
+        select relname, relrowsecurity from pg_class
+        where relname in ('customers', 'contacts', 'properties')`;
+      expect(rls.map((r) => r.relname).sort()).toEqual([...tables].sort());
+      for (const row of rls) expect(row.relrowsecurity, row.relname).toBe(true);
+
+      const roles = await tx.$queryRaw<{ rolname: string }[]>`
+        select rolname from pg_roles where rolname in ('authenticated', 'anon')`;
+      for (const { rolname } of roles) {
+        for (const table of tables) {
+          const [row] = await tx.$queryRaw<{ allowed: boolean }[]>`
+            select has_table_privilege(${rolname}, ${table}, 'select') as allowed`;
+          expect(row?.allowed, `${rolname} select on ${table}`).toBe(false);
+        }
+      }
+    });
+  });
+
   it("rejects an uppercase contact email", async () => {
     await expect(
       withRollback(async (tx) => {

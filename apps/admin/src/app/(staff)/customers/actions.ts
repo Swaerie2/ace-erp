@@ -10,7 +10,9 @@ import {
   createCustomer,
   customerSchema,
   findDuplicateContacts,
+  hasPropertyInput,
   inTx,
+  MANAGEMENT,
   propertySchema,
   removeContact,
   restoreCustomer,
@@ -24,8 +26,6 @@ import { toActor } from "@/lib/actor";
 import { requireStaff } from "@/lib/auth";
 import { errorsFrom, failure, formValues, withPrefix, type FormState } from "@/lib/form";
 
-const MANAGEMENT = ["OWNER", "MANAGER"] as const;
-
 export async function createCustomerAction(
   _prev: FormState,
   formData: FormData,
@@ -36,7 +36,9 @@ export async function createCustomerAction(
 
   const customer = customerSchema.safeParse(values);
   const contact = contactSchema.safeParse(withPrefix(values, "contact_"));
-  const wantsProperty = Boolean(values.property_addressLine1?.trim());
+  // Any property detail means a property was meant, so a missing street is reported instead of
+  // the details being dropped silently.
+  const wantsProperty = hasPropertyInput(values, "property_");
   const property = wantsProperty ? propertySchema.safeParse(withPrefix(values, "property_")) : null;
 
   const fieldErrors = {
@@ -163,16 +165,17 @@ export async function removeContactAction(formData: FormData): Promise<void> {
   const actor = await toActor(staff);
   const contactId = idSchema.parse(formData.get("contactId"));
   const customerId = idSchema.parse(formData.get("customerId"));
-  let notice: string | undefined;
+  let code: "last-contact" | "generic" | undefined;
   try {
     await inTx((tx) => removeContact(tx, actor, contactId));
   } catch (error) {
-    // e.g. "A customer needs at least one contact." Show it on the page.
-    notice = failure(error)?.error ?? "Could not remove that contact.";
+    // Only a fixed code goes in the address bar; the contacts tab turns it into a message.
+    const message = failure(error)?.error;
+    code = message === "A customer needs at least one contact." ? "last-contact" : "generic";
   }
   redirect(
-    notice
-      ? `/customers/${customerId}?tab=contacts&error=${encodeURIComponent(notice)}`
+    code
+      ? `/customers/${customerId}?tab=contacts&error=${code}`
       : `/customers/${customerId}?tab=contacts`,
   );
 }

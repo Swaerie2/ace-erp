@@ -6,8 +6,11 @@ import { ContactForm, type ContactRow } from "./contact-form";
 
 type Customer = NonNullable<Awaited<ReturnType<typeof getCustomer>>>;
 
-/** A message from the address bar is shown as plain text, short. */
-const NOTICE_MAX = 200;
+/** The address bar only carries a fixed code; nothing else from the URL is ever shown. */
+const NOTICES: Record<string, string> = {
+  "last-contact": "A customer needs at least one contact.",
+  generic: "Could not remove that contact.",
+};
 
 /** Only these fields cross to the browser. */
 function toRow(c: Customer["contacts"][number]): ContactRow {
@@ -35,6 +38,7 @@ export function ContactsTab({
   notice?: string | undefined;
 }) {
   const locked = Boolean(customer.anonymisedAt);
+  const message = notice ? Object.hasOwn(NOTICES, notice) && NOTICES[notice] : undefined;
   const editing = locked ? undefined : customer.contacts.find((c) => c.id === edit);
 
   if (add && !locked) return <ContactForm customerId={customer.id} />;
@@ -42,12 +46,12 @@ export function ContactsTab({
 
   return (
     <div className="space-y-4">
-      {notice ? (
+      {message ? (
         <p
           role="alert"
           className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800 ring-1 ring-red-200"
         >
-          {notice.slice(0, NOTICE_MAX)}
+          {message}
         </p>
       ) : null}
       <ul className="divide-y divide-charcoal/10 rounded-2xl bg-white/70 ring-1 ring-charcoal/10">

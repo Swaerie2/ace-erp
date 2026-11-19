@@ -3,6 +3,7 @@
 import {
   commitImport,
   inTx,
+  MANAGEMENT,
   MAX_IMPORT_BYTES,
   MAX_IMPORT_ROWS,
   parseCsvText,
@@ -38,8 +39,6 @@ export type ImportState =
       linesJson?: string;
     }
   | undefined;
-
-const MANAGEMENT = ["OWNER", "MANAGER"] as const;
 
 const TOO_BIG = "That file is bigger than 2 MB.";
 const TOO_BIG_TO_PREVIEW = "This file is too large to preview safely. Split it into smaller files.";

@@ -38,6 +38,7 @@ export async function updateProperty(
   const existing = await store.property.findUnique({ where: { id: propertyId } });
   if (!existing) throw new DomainError("That property could not be found.");
   await findEditableCustomer(store, existing.customerId);
+  if (existing.archivedAt) throw new DomainError("This property is archived.");
   const data = propertyData(input);
   const changed = changedFields(existing, data);
   // A save that changes nothing writes nothing: no lock, no update, no audit line.
@@ -54,6 +55,8 @@ export async function archiveProperty(store: Store, actor: Actor, propertyId: st
   assertRole(actor, MANAGEMENT);
   const existing = await store.property.findUnique({ where: { id: propertyId } });
   if (!existing) throw new DomainError("That property could not be found.");
+  // Already archived: nothing to do, so write nothing (no lock, no update, no audit line).
+  if (existing.archivedAt) return;
   await requireEditableCustomer(store, existing.customerId);
   await store.property.update({ where: { id: propertyId }, data: { archivedAt: new Date() } });
   await logCustomerEvent(store, actor, "customer.property_archived", existing.customerId, {

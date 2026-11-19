@@ -1,3 +1,4 @@
+import "server-only";
 import { DomainError, ForbiddenError, type DuplicateMatch } from "@ace/core";
 import { redirect } from "next/navigation";
 import { z } from "zod";

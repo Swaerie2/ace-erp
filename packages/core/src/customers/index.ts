@@ -8,6 +8,7 @@ export * from "./mappers";
 export * from "./number";
 export * from "./phone";
 export * from "./privacy";
+export * from "./property-input";
 export * from "./properties";
 export * from "./schemas";
 export * from "./store";

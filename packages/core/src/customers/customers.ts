@@ -73,9 +73,12 @@ export async function updateCustomer(
 
 export async function archiveCustomer(store: Store, actor: Actor, id: string): Promise<void> {
   assertRole(actor, MANAGEMENT);
+  // Look first WITHOUT locking, so an already-archived customer is left completely untouched.
+  if ((await findEditableCustomer(store, id)).status === "ARCHIVED") return;
+  // Then lock and decide again from a fresh read: a concurrent change may have landed in between.
+  await lockCustomer(store, id);
   const existing = await findEditableCustomer(store, id);
   if (existing.status === "ARCHIVED") return;
-  await lockCustomer(store, id);
   await store.customer.update({
     where: { id },
     data: { status: "ARCHIVED", statusBeforeArchive: existing.status, archivedAt: new Date() },
@@ -85,9 +88,12 @@ export async function archiveCustomer(store: Store, actor: Actor, id: string): P
 
 export async function restoreCustomer(store: Store, actor: Actor, id: string): Promise<void> {
   assertRole(actor, MANAGEMENT);
+  // Look first WITHOUT locking, so a customer that is not archived is left completely untouched.
+  if ((await findEditableCustomer(store, id)).status !== "ARCHIVED") return;
+  // Then lock and decide again from a fresh read: a concurrent change may have landed in between.
+  await lockCustomer(store, id);
   const existing = await findEditableCustomer(store, id);
   if (existing.status !== "ARCHIVED") return;
-  await lockCustomer(store, id);
   await store.customer.update({
     where: { id },
     data: {
@@ -210,13 +216,17 @@ export async function getCustomer(store: Store, actor: Actor, id: string) {
 
 // --- crew ---------------------------------------------------------------------------------------
 
+/** Staff roles that may use the crew-safe views. */
+const CREW_READERS = ["OWNER", "MANAGER", "CREW"] as const;
+
 const CREW_VISIBLE: Prisma.CustomerWhereInput = { status: { in: ["ACTIVE", "PAUSED"] } };
 
 export async function listCustomersForCrew(
   store: Store,
-  _actor: Actor,
+  actor: Actor,
   query: { q?: string | undefined; page?: number | undefined },
 ) {
+  assertRole(actor, CREW_READERS);
   const { page, pageSize, skip } = paging(query);
   const term = query.q?.trim();
   const where: Prisma.CustomerWhereInput = {
@@ -230,6 +240,7 @@ export async function listCustomersForCrew(
                 {
                   properties: {
                     some: {
+                      archivedAt: null,
                       OR: [
                         { addressLine1: { contains: term, mode: "insensitive" as const } },
                         { suburb: { contains: term, mode: "insensitive" as const } },
@@ -254,7 +265,8 @@ export async function listCustomersForCrew(
   return { items, total, page, pageSize };
 }
 
-export async function getCustomerForCrew(store: Store, _actor: Actor, id: string) {
+export async function getCustomerForCrew(store: Store, actor: Actor, id: string) {
+  assertRole(actor, CREW_READERS);
   return store.customer.findFirst({
     where: { id, ...CREW_VISIBLE },
     select: CREW_CUSTOMER_SELECT,

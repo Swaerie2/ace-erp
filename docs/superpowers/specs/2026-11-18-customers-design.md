@@ -96,7 +96,7 @@ accept `082 123 4567` or `+27 82 123 4567` and are stored as `+27821234567`.
 - Step 1 uploads and parses on the server and shows a preview: rows that will be created, rows that
   look like duplicates (same email or phone, or same name and address) and rows with errors, each
   with the reason. Nothing is saved yet.
-- Step 2 confirms. Duplicates are skipped by default; errors are skipped and listed. The import is
+- Step 2 confirms. Duplicates are always skipped (there is no include-duplicates option in this version; a same-name customer with no address is also flagged); errors are skipped and listed. The import is
   one transaction.
 - The uploaded file is never stored. The audit entry records counts only, no personal details.
 - Real client files stay out of git (`*.csv` is already ignored).
@@ -115,8 +115,10 @@ accept `082 123 4567` or `+27 82 123 4567` and are stored as `+27821234567`.
 - Database checks (same style as `verify-db`): RLS on, `anon` and `authenticated` cannot read the
   new tables, unique number, lowercase email constraint.
 - Browser tests with made-up customers only: add, search, edit, archive and restore, import with
-  good, duplicate and bad rows, and a CREW test account that cannot reach fees or emails even by
-  typing the URL or calling the action directly.
+  good, duplicate and bad rows, and a CREW test account that cannot reach fees or emails by typing
+  the URL. Crew calling a management action directly is covered by the actions' `requireStaff` gate
+  and the core database tests (crew is refused by the core functions), not driven separately in the
+  browser.
 - The database tests run through `npm run test:db`, against the development database inside
   transactions that always roll back. `npm run test` skips them, so CI (which has no database) does
   too.
@@ -132,5 +134,5 @@ accept `082 123 4567` or `+27 82 123 4567` and are stored as `+27821234567`.
 3. Fee and extras are simple fields now and move into the price list in Module 2.
 4. Audit lines hold field names and ids only, never personal values, so anonymising leaves nothing
    behind in the append-only log.
-5. The crew list excludes leads and archived customers. Archived and anonymised customers cannot be
-   edited.
+5. The crew list excludes leads and archived customers. Archived customers can still be corrected
+   and stay archived; anonymised customers cannot be changed at all.

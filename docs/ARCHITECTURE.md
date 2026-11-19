@@ -108,8 +108,8 @@ These apply to every module. A module is not finished until it follows all of th
 - **Anonymise** (OWNER only) replaces a customer's personal details and cannot be undone. The owner
   must type the customer number to confirm. It writes the contacts and properties first and the
   customer row last, under a lock on the customer row, so a half-finished run can be retried and an
-  edit cannot slip in at the same time. Money amounts are kept. Archived and anonymised customers
-  cannot be edited. A guard test, `privacy-coverage.test.ts`, fails whenever a new personal column
+  edit cannot slip in at the same time. Money amounts are kept. Archived customers can still be
+  corrected and stay archived; anonymised customers cannot be changed at all. A guard test, `privacy-coverage.test.ts`, fails whenever a new personal column
   is added to a customer table until someone decides how anonymise treats it.
 - **CSV import:** at most 2 MB and 2,000 rows. The file is read and previewed first, then confirmed.
   Duplicates (same email, same phone, or same name and address) are skipped. Errors are reported by
@@ -132,6 +132,35 @@ These apply to every module. A module is not finished until it follows all of th
   a body-size error.
 - Real customer numbers start after the numbers the tests have used up in the development
   database. Use a fresh live database for real data so the numbers start at `C-0001`.
+- Add database CHECK constraints for the `+27` phone format and for `status = ARCHIVED` going with
+  `archivedAt` being set. This needs a new migration, so it was left out of this module.
+- Contacts are hard-deleted. Add a confirm step and switch to a soft delete before quotes reference
+  contacts in Module 3.
+- The row lock is a touch of `updatedAt`. Switch to `SELECT ... FOR UPDATE` before Module 3 locks
+  customers.
+- Extend `anonymiseCustomer` and `privacy-coverage.test.ts` to every new table that holds customer
+  data (quotes, invoices), and drive that test from the set of scrubbed fields.
+- Imported customers have no per-customer audit row (the import writes one line with counts).
+- Bind form ids to their customer in core (for example a contact id must belong to the customer
+  in the URL) before Module 4 adds client logins.
+- The database tests use some fixed emails and phone numbers, and `test-db.mjs` has no allow-list
+  for which database it runs against. Check `.env.local` points at the development database before
+  running `npm run test:db`.
+
+### Before real customer data goes in
+
+- [ ] Create a fresh live Supabase project and run `prisma migrate deploy`. Customer numbers then
+      start at `C-0001` (the development database numbers were used up by tests).
+- [ ] Confirm the region. Cape Town was wanted; check Supabase offers it. If not, record the basis
+      for the cross-border transfer under POPIA section 72.
+- [ ] Turn on backups and test a restore. Anonymised data stays in backups until they roll off.
+- [ ] Re-run the Row Level Security and privilege checks against the live database for both `anon`
+      and `authenticated`.
+- [ ] Keep sign-up disabled, a minimum password length of 12 or more, leaked-password protection
+      on, and the custom email sender.
+- [ ] Only the hosting dashboard holds live credentials, never `.env.local`.
+- [ ] Imported customers have no consent date. Record the lawful basis (an existing customer
+      relationship) or add a consent column to the import before importing real clients.
 
 ## Working agreement
 

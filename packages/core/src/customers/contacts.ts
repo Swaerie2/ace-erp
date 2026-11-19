@@ -55,13 +55,9 @@ export async function removeContact(store: Store, actor: Actor, contactId: strin
   const existing = await store.contact.findUnique({ where: { id: contactId } });
   if (!existing) throw new DomainError("That contact could not be found.");
   await requireEditableCustomer(store, existing.customerId);
-  // Lock the customer row until this transaction ends. Without it, two people removing two
-  // different contacts at once could both count 2 and both delete, leaving none. The second
-  // removal waits here, then counts the committed result.
-  await store.customer.update({
-    where: { id: existing.customerId },
-    data: { updatedAt: new Date() },
-  });
+  // requireEditableCustomer has just locked the customer row until this transaction ends. Without
+  // that lock, two people removing two different contacts at once could both count 2 and both
+  // delete, leaving none. The second removal waits there, then counts the committed result.
   const count = await store.contact.count({ where: { customerId: existing.customerId } });
   if (count <= 1) throw new DomainError("A customer needs at least one contact.");
   await store.contact.delete({ where: { id: contactId } });
