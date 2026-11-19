@@ -19,6 +19,7 @@
     "test": "npm run test --workspaces --if-present",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "test:db": "npm run test:db -w @ace/core",
     "db:generate": "npm run db:generate -w @ace/core",
     "db:validate": "npm run db:validate -w @ace/core",
     "db:migrate": "npm run db:migrate -w @ace/core",

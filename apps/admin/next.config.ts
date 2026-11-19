@@ -12,6 +12,10 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   transpilePackages: ["@ace/core"],
   poweredByHeader: false,
+  experimental: {
+    // The customer import accepts files up to 2 MB (plus form overhead).
+    serverActions: { bodySizeLimit: "3mb" },
+  },
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },

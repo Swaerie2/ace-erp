@@ -40,12 +40,37 @@ The public website (`www.acegardens.co.za`) is a separate project and is not tou
 
 ## Everyday commands
 
-| Command          | What it does                                                                          |
-| ---------------- | ------------------------------------------------------------------------------------- |
-| `npm run check`  | Runs every check at once: types, lint, tests, formatting. Do this before each commit. |
-| `npm run test`   | Runs the automated tests.                                                             |
-| `npm run build`  | Builds both apps the way the live site is built.                                      |
-| `npm run format` | Tidies the formatting of all files.                                                   |
+| Command           | What it does                                                                          |
+| ----------------- | ------------------------------------------------------------------------------------- |
+| `npm run check`   | Runs every check at once: types, lint, tests, formatting. Do this before each commit. |
+| `npm run test`    | Runs the automated tests. Skips the database tests (this is also how CI runs).        |
+| `npm run test:db` | Runs the database tests. See the warning below.                                       |
+| `npm run build`   | Builds both apps the way the live site is built.                                      |
+| `npm run format`  | Tidies the formatting of all files.                                                   |
+
+**About `npm run test:db`:** these tests run against the **development** database, inside
+transactions that always roll back, so they leave no records behind. Never point it at the live
+database. It needs a real development database set up in `.env.local`, which is why `npm run test`
+and the automatic checks on GitHub skip them.
+
+## Customers
+
+Staff can add, find, edit and archive customers, each with their contacts (people) and properties
+(where the work happens). Existing client lists can be loaded from a CSV spreadsheet: the app shows
+a preview first, and nothing is saved until you confirm. Customers are archived, never deleted.
+Two tools are for the owner only: exporting one customer's data, and anonymising a customer.
+
+What each role sees:
+
+| Role    | Can do                                                                                                                                  |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| OWNER   | Everything, including the owner-only tools (export and anonymise).                                                                      |
+| MANAGER | Everything except the owner-only tools.                                                                                                 |
+| CREW    | Sees customer names, property addresses, the map link and access notes only. Nothing else (no fees, emails, phones or billing details). |
+
+The design and the decisions behind it are in
+[docs/superpowers/specs/2026-11-18-customers-design.md](docs/superpowers/specs/2026-11-18-customers-design.md).
+How it is built is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Ground rules
 

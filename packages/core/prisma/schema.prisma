@@ -1,7 +1,7 @@
 // ACE Garden Services: core database schema.
 //
-// Module 0 (foundation) only: organisation settings, staff users, audit log.
-// Customers arrive in Module 1, services in Module 2, quotes in Module 3, and so on.
+// Modules 0 and 1: organisation settings, staff users, audit log, customers, contacts, properties.
+// Services arrive in Module 2, quotes in Module 3, and so on.
 //
 // Rules for every future model:
 //   * Money is stored as whole cents (Int), never floats.
@@ -82,4 +82,127 @@ model AuditLog {
   @@index([actorType, actorId])
   @@index([at])
   @@map("audit_log")
+}
+
+enum CustomerType {
+  PERSON
+  COMPANY
+}
+
+enum CustomerStatus {
+  LEAD
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum CustomerSource {
+  REFERRAL
+  GOOGLE
+  FACEBOOK
+  DIRECTORY
+  OTHER
+}
+
+enum ServiceFrequency {
+  WEEKLY
+  FORTNIGHTLY
+  MONTHLY
+  ONCE_OFF
+}
+
+/// The account quotes and invoices go to. Archived, never deleted.
+model Customer {
+  id                  String          @id @default(uuid()) @db.Uuid
+  /// Shown as C-0001. A database sequence, so numbers are never reused.
+  number              Int             @unique @default(autoincrement())
+  type                CustomerType
+  displayName         String
+  companyName         String?
+  registrationNumber  String?
+  status              CustomerStatus  @default(ACTIVE)
+  /// Remembered so "restore" returns the customer to where it was.
+  statusBeforeArchive CustomerStatus?
+  billingLine1        String?
+  billingLine2        String?
+  billingSuburb       String?
+  billingCity         String?
+  billingPostalCode   String?
+  source              CustomerSource?
+  sourceNote          String?
+  /// Internal only. Never shown to crew or in the client portal.
+  notes               String?
+  /// POPIA: when and how they agreed to us holding their details.
+  consentAt           DateTime?
+  consentSource       String?
+  consentNote         String?
+  archivedAt          DateTime?
+  anonymisedAt        DateTime?
+  createdById         String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  contacts   Contact[]
+  properties Property[]
+
+  @@index([displayName])
+  @@index([status])
+  @@map("customers")
+}
+
+/// A person at a customer (owner, trustee, managing agent, tenant...).
+model Contact {
+  id               String   @id @default(uuid()) @db.Uuid
+  customerId       String   @db.Uuid
+  name             String
+  role             String?
+  /// Always lowercase (database constraint).
+  email            String?
+  /// Always +27 format.
+  phone            String?
+  receivesQuotes   Boolean  @default(true)
+  receivesInvoices Boolean  @default(true)
+  /// Module 4: this contact's email becomes a client-portal login.
+  portalAccess     Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@index([customerId])
+  @@index([email])
+  @@index([phone])
+  @@map("contacts")
+}
+
+/// A place where work happens. A customer can have several.
+model Property {
+  id                    String            @id @default(uuid()) @db.Uuid
+  customerId            String            @db.Uuid
+  label                 String
+  addressLine1          String
+  addressLine2          String?
+  suburb                String?
+  city                  String?
+  postalCode            String?
+  mapUrl                String?
+  /// Gate codes, dogs, who to call. Staff only, never shown to clients.
+  accessNotes           String?
+  lawnSizeSqm           Int?
+  grassType             String?
+  hasIrrigation         Boolean           @default(false)
+  terrainNotes          String?
+  frequency             ServiceFrequency?
+  preferredDay          String?
+  /// Plain field for now; becomes price-list items in Module 2.
+  agreedMonthlyFeeCents Int?
+  extrasNote            String?
+  archivedAt            DateTime?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@index([customerId])
+  @@map("properties")
 }
