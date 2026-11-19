@@ -1,6 +1,7 @@
 export * from "./content";
 export * from "./document";
 export * from "./drafts";
+export * from "./issue";
 export * from "./reference";
 export * from "./schemas";
 export * from "./store";

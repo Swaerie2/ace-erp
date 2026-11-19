@@ -3,7 +3,8 @@ import type { Actor } from "../customers/access";
 import { createCustomer } from "../customers/customers";
 import { contactSchema, customerSchema, propertySchema } from "../customers/schemas";
 import type { Prisma } from "../generated/prisma/client";
-import { saveDraft } from "./drafts";
+import { createQuote, saveDraft } from "./drafts";
+import { issueQuote } from "./issue";
 import { toDateString } from "./reference";
 import type { DraftInput, DraftLineInput } from "./schemas";
 import { findQuote } from "./store";
@@ -85,4 +86,16 @@ export async function fillDraft(
     lines: [monthlyLine()],
     ...over,
   });
+}
+
+/** A customer, a filled draft and the issued quote. */
+export async function makeIssued(
+  tx: Prisma.TransactionClient,
+  opts: { status?: "LEAD" | "ACTIVE"; draft?: Partial<DraftInput> } = {},
+) {
+  const c = await makeCustomer(tx, opts.status);
+  const { id } = await createQuote(tx, manager, c);
+  await fillDraft(tx, id, opts.draft);
+  const issued = await issueQuote(tx, manager, id);
+  return { ...c, id, reference: issued.reference };
 }
