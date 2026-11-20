@@ -1,22 +1,22 @@
-import { formatZAR, type getPropertyAgreement } from "@ace/core";
+import { FREQUENCY_LABELS, formatZAR, type getPropertyAgreement } from "@ace/core";
 import Link from "next/link";
 import { formatDate } from "@/lib/format";
 
 type Agreement = Awaited<ReturnType<typeof getPropertyAgreement>>;
 type AgreementQuote = NonNullable<Agreement["current"]>;
 
-const FREQUENCIES: Record<string, string> = {
-  WEEKLY: "weekly",
-  FORTNIGHTLY: "every two weeks",
-  MONTHLY: "monthly",
-  AS_REQUIRED: "as required",
-};
+function frequencyText(frequency: string | null): string {
+  const label = frequency
+    ? (FREQUENCY_LABELS as Record<string, string | undefined>)[frequency]
+    : undefined;
+  return label ? `, ${label.toLowerCase()}` : "";
+}
 
 function lineText(l: AgreementQuote["lines"][number]): string {
   if (l.lineKind === "INCLUDED") return `${l.description} (included)`;
   const amount = formatZAR(l.amountCents ?? 0);
   if (l.billing === "MONTHLY") {
-    return `${l.description}: ${amount} per month${l.frequency ? `, ${FREQUENCIES[l.frequency]}` : ""}`;
+    return `${l.description}: ${amount} per month${frequencyText(l.frequency)}`;
   }
   return `${l.description}: ${amount} once-off`;
 }

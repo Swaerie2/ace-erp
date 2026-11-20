@@ -201,14 +201,16 @@ export async function markSentAction(formData: FormData): Promise<void> {
 export async function acceptQuoteAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const staff = await requireStaff(MANAGEMENT);
   const actor = await toActor(staff);
-  const values = formValues(formData);
+  const chosen = formData.getAll("chosen").filter((v): v is string => typeof v === "string");
+  // The add-on ticks come back with every failure so the form can tick them again.
+  const values: Record<string, string> = { ...formValues(formData), chosen: chosen.join(",") };
   const id = idSchema.safeParse(values.id);
   if (!id.success) return { error: BAD_REQUEST, nonce: Date.now() };
   const parsed = acceptSchema.safeParse({
     method: values.method,
     acceptedBy: values.acceptedBy,
     startDate: values.startDate,
-    chosenLineIds: formData.getAll("chosen").filter((v): v is string => typeof v === "string"),
+    chosenLineIds: chosen,
     note: values.note ?? "",
   });
   if (!parsed.success) return { fieldErrors: errorsFrom(parsed.error), values, nonce: Date.now() };

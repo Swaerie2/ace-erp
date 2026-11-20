@@ -100,6 +100,7 @@ function AcceptForm({ id, recipientName, optionalLines, today }: Props) {
                   type="checkbox"
                   name="chosen"
                   value={l.id}
+                  defaultChecked={(v.chosen ?? "").split(",").includes(l.id)}
                   className="h-5 w-5 rounded border-charcoal/30 text-forest"
                 />
                 {l.label}
