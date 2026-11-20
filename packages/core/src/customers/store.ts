@@ -19,7 +19,7 @@ export function inTx<T>(
 
 /** Writes an audit line about a customer. `after` must hold field NAMES and ids, never personal values. */
 export async function logCustomerEvent(
-  store: Store,
+  store: Pick<Db, "auditLog">,
   actor: Actor,
   action: string,
   customerId: string,
@@ -51,7 +51,7 @@ export function changedFields(
  * it is safe for deciding "is there anything to do?" without touching the row. Anything that then
  * writes must call `lockCustomer` (or use `requireEditableCustomer`, which does both).
  */
-export async function findEditableCustomer(store: Store, customerId: string) {
+export async function findEditableCustomer(store: Pick<Db, "customer">, customerId: string) {
   const customer = await store.customer.findUnique({ where: { id: customerId } });
   if (!customer) throw new DomainError("That customer could not be found.");
   if (customer.anonymisedAt) {
@@ -68,7 +68,7 @@ export async function findEditableCustomer(store: Store, customerId: string) {
  * writing personal data back into an anonymised customer.
  * It does bump `updatedAt`, so call it only when something is really about to be written.
  */
-export async function lockCustomer(store: Store, customerId: string): Promise<void> {
+export async function lockCustomer(store: Pick<Db, "customer">, customerId: string): Promise<void> {
   const { count } = await store.customer.updateMany({
     where: { id: customerId, anonymisedAt: null },
     data: { updatedAt: new Date() },
@@ -83,7 +83,7 @@ export async function lockCustomer(store: Store, customerId: string): Promise<vo
 }
 
 /** Throws a friendly error if the customer is missing or anonymised, then locks the row. */
-export async function requireEditableCustomer(store: Store, customerId: string) {
+export async function requireEditableCustomer(store: Pick<Db, "customer">, customerId: string) {
   const customer = await findEditableCustomer(store, customerId);
   await lockCustomer(store, customerId);
   return customer;

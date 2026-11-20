@@ -1,3 +1,4 @@
+import type { Db } from "../db";
 import type { Prisma } from "../generated/prisma/client";
 import { CustomerStatus } from "../generated/prisma/enums";
 import { assertRole, DomainError, MANAGEMENT, type Actor } from "./access";
@@ -110,7 +111,12 @@ export async function restoreCustomer(store: Store, actor: Actor, id: string): P
  * left completely untouched. An archived customer is refused: restore it first, so a former client
  * cannot be switched on by accident. Module 3 will call this when a client accepts a quote.
  */
-export async function activateCustomer(store: Store, actor: Actor, id: string): Promise<void> {
+export async function activateCustomer(
+  store: Pick<Db, "customer" | "auditLog">,
+  actor: Actor,
+  id: string,
+  opts: { via?: "quote" } = {},
+): Promise<void> {
   assertRole(actor, MANAGEMENT);
   /** True when there is something to do; throws for an archived customer. */
   const needsActivating = (status: CustomerStatus) => {
@@ -127,7 +133,10 @@ export async function activateCustomer(store: Store, actor: Actor, id: string): 
   if (!needsActivating(existing.status)) return;
   await store.customer.update({ where: { id }, data: { status: "ACTIVE" } });
   // Only the previous status is recorded (it is not personal data).
-  await logCustomerEvent(store, actor, "customer.activated", id, { from: existing.status });
+  await logCustomerEvent(store, actor, "customer.activated", id, {
+    from: existing.status,
+    ...(opts.via ? { via: opts.via } : {}),
+  });
 }
 
 // --- searching ----------------------------------------------------------------------------------

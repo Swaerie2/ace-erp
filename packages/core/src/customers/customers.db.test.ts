@@ -425,6 +425,20 @@ describe.skipIf(!dbTestsEnabled)("customers data layer", () => {
     });
   });
 
+  it("records that a lead was activated by a quote acceptance", async () => {
+    await withRollback(async (tx) => {
+      const { id } = await createCustomer(tx, manager, {
+        customer: customer({ status: "LEAD" }),
+        contact: contact(),
+      });
+      await activateCustomer(tx, manager, id, { via: "quote" });
+      const audit = await tx.auditLog.findMany({
+        where: { entityId: id, action: "customer.activated" },
+      });
+      expect(audit[0]?.after).toEqual({ from: "LEAD", via: "quote" });
+    });
+  });
+
   it("marking an already active customer as active changes and records nothing", async () => {
     await withRollback(async (tx) => {
       const { id } = await createCustomer(tx, manager, {
