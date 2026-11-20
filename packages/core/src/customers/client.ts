@@ -25,3 +25,6 @@ export {
 export { quoteTotals } from "../quotes/totals";
 export { addDays, todaySA } from "../quotes/reference";
 export { formatZAR } from "../money";
+export { buildQuoteDocument } from "../quotes/document";
+export { validateForIssue } from "../quotes/schemas";
+export { bulletLines, snapshotWording } from "../quotes/wording-schema";

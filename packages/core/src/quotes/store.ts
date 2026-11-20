@@ -17,6 +17,7 @@ export type QuoteStore = Pick<
   | "property"
   | "auditLog"
   | "organisationSettings"
+  | "staffUser"
   | "$queryRaw"
 >;
 

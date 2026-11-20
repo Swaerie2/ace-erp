@@ -1,3 +1,4 @@
+export * from "./activity";
 export * from "./content";
 export * from "./document";
 export * from "./drafts";
