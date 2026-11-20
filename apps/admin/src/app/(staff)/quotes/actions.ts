@@ -1,10 +1,14 @@
 "use server";
 
 import {
+  acceptQuote,
+  acceptSchema,
   contactSchema,
   createCustomer,
   createQuote,
   customerSchema,
+  declineQuote,
+  declineSchema,
   deleteDraft,
   DraftConflictError,
   draftSchema,
@@ -12,8 +16,13 @@ import {
   inTx,
   issueQuote,
   MANAGEMENT,
+  markSent,
   propertySchema,
+  reverseAcceptance,
+  reviseQuote,
   saveDraft,
+  SENT_METHODS,
+  withdrawQuote,
 } from "@ace/core";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -171,4 +180,103 @@ export async function deleteDraftAction(formData: FormData): Promise<void> {
     failure(error);
   }
   redirect("/quotes");
+}
+
+const sentMethod = z.enum(SENT_METHODS);
+const BAD_REQUEST = "Something went wrong. Refresh the page and try again.";
+
+export async function markSentAction(formData: FormData): Promise<void> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const id = idSchema.parse(formData.get("id"));
+  const method = sentMethod.parse(formData.get("method"));
+  try {
+    await inTx((tx) => markSent(tx, actor, id, method));
+  } catch (error) {
+    failure(error);
+  }
+  redirect(`/quotes/${id}`);
+}
+
+export async function acceptQuoteAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const values = formValues(formData);
+  const id = idSchema.safeParse(values.id);
+  if (!id.success) return { error: BAD_REQUEST, nonce: Date.now() };
+  const parsed = acceptSchema.safeParse({
+    method: values.method,
+    acceptedBy: values.acceptedBy,
+    startDate: values.startDate,
+    chosenLineIds: formData.getAll("chosen").filter((v): v is string => typeof v === "string"),
+    note: values.note ?? "",
+  });
+  if (!parsed.success) return { fieldErrors: errorsFrom(parsed.error), values, nonce: Date.now() };
+  let flag: "PAUSED" | "ARCHIVED" | null;
+  try {
+    flag = (await inTx((tx) => acceptQuote(tx, actor, id.data, parsed.data))).customerFlag;
+  } catch (error) {
+    return failure(error, values);
+  }
+  redirect(flag ? `/quotes/${id.data}?notice=${flag.toLowerCase()}` : `/quotes/${id.data}`);
+}
+
+export async function declineQuoteAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const values = formValues(formData);
+  const id = idSchema.safeParse(values.id);
+  if (!id.success) return { error: BAD_REQUEST, nonce: Date.now() };
+  const parsed = declineSchema.safeParse({ reason: values.reason ?? "" });
+  if (!parsed.success) return { fieldErrors: errorsFrom(parsed.error), values, nonce: Date.now() };
+  try {
+    await inTx((tx) => declineQuote(tx, actor, id.data, parsed.data));
+  } catch (error) {
+    return failure(error, values);
+  }
+  redirect(`/quotes/${id.data}`);
+}
+
+export async function withdrawQuoteAction(formData: FormData): Promise<void> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const id = idSchema.parse(formData.get("id"));
+  try {
+    await inTx((tx) => withdrawQuote(tx, actor, id));
+  } catch (error) {
+    failure(error);
+  }
+  redirect(`/quotes/${id}`);
+}
+
+/** Copies the quote into a new draft and opens the builder on it. */
+export async function reviseQuoteAction(formData: FormData): Promise<void> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const id = idSchema.parse(formData.get("id"));
+  let draftId: string;
+  try {
+    draftId = (await inTx((tx) => reviseQuote(tx, actor, id))).id;
+  } catch (error) {
+    failure(error);
+    redirect(`/quotes/${id}`);
+  }
+  redirect(`/quotes/${draftId}`);
+}
+
+export async function reverseAcceptanceAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const staff = await requireStaff(["OWNER"]);
+  const actor = await toActor(staff);
+  const values = formValues(formData);
+  const id = idSchema.safeParse(values.id);
+  if (!id.success) return { error: BAD_REQUEST, nonce: Date.now() };
+  try {
+    await inTx((tx) => reverseAcceptance(tx, actor, id.data, values.note ?? ""));
+  } catch (error) {
+    return failure(error, values);
+  }
+  redirect(`/quotes/${id.data}`);
 }

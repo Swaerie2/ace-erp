@@ -1,7 +1,8 @@
-import type { getCustomer } from "@ace/core";
+import type { getCustomer, getPropertyAgreement } from "@ace/core";
 import Link from "next/link";
 import { secondaryButtonClass } from "@/components/form";
 import { archivePropertyAction } from "../actions";
+import { AgreementPanel } from "./agreement-panel";
 import { PropertyForm, type PropertyRow } from "./property-form";
 
 type Customer = NonNullable<Awaited<ReturnType<typeof getCustomer>>>;
@@ -31,10 +32,12 @@ export function PropertiesTab({
   customer,
   edit,
   add,
+  agreements,
 }: {
   customer: Customer;
   edit?: string | undefined;
   add: boolean;
+  agreements: Record<string, Awaited<ReturnType<typeof getPropertyAgreement>>>;
 }) {
   const locked = Boolean(customer.anonymisedAt);
   const editing = locked ? undefined : customer.properties.find((p) => p.id === edit);
@@ -125,6 +128,7 @@ export function PropertiesTab({
                 </div>
               ) : null}
             </dl>
+            <AgreementPanel agreement={agreements[p.id] ?? { current: null, onceOff: [] }} />
           </li>
         ))}
       </ul>

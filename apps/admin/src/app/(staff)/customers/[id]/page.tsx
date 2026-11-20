@@ -3,6 +3,7 @@ import {
   getCustomer,
   getCustomerForCrew,
   getDb,
+  getPropertyAgreement,
   listCustomerActivity,
   listQuotes,
 } from "@ace/core";
@@ -106,7 +107,18 @@ export default async function CustomerPage({
         ) : tab === "contacts" ? (
           <ContactsTab customer={customer} edit={edit} add={add === "1"} notice={notice} />
         ) : tab === "properties" ? (
-          <PropertiesTab customer={customer} edit={edit} add={add === "1"} />
+          <PropertiesTab
+            customer={customer}
+            edit={edit}
+            add={add === "1"}
+            agreements={Object.fromEntries(
+              await Promise.all(
+                customer.properties.map(
+                  async (p) => [p.id, await getPropertyAgreement(getDb(), actor, p.id)] as const,
+                ),
+              ),
+            )}
+          />
         ) : tab === "quotes" ? (
           <QuotesTab
             customerId={id}

@@ -3,6 +3,7 @@ import {
   displayStatus,
   formatCustomerNumber,
   formatQuoteReference,
+  formatZAR,
   getDb,
   getQuote,
   getQuoteWording,
@@ -14,14 +15,28 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 import { toActor } from "@/lib/actor";
 import { requireStaff } from "@/lib/auth";
+import { first } from "@/lib/search-params";
 import { QuoteStatusBadge } from "../status-badge";
+import { ActionPanel } from "./action-panel";
 import { QuoteBuilder } from "./builder";
 import type { BuilderInitial } from "./builder-types";
 import { loadDocument } from "./document-input";
 import { QuoteHistory } from "./history";
 import { QuoteDocumentView } from "./quote-document";
+import { QuoteFacts } from "./quote-facts";
 
-export default async function QuotePage({ params }: { params: Promise<{ id: string }> }) {
+const NOTICES: Record<string, string> = {
+  paused: "Accepted. The customer is paused, so they were not made active. Check the customer.",
+  archived: "Accepted. The customer is archived and was left unchanged. Check the customer.",
+};
+
+export default async function QuotePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ notice?: string | string[] }>;
+}) {
   const staff = await requireStaff(["OWNER", "MANAGER"]); // every page starts with this
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
@@ -72,6 +87,11 @@ export default async function QuotePage({ params }: { params: Promise<{ id: stri
     };
     return <QuoteBuilder initial={initial} />;
   }
+  const sp = await searchParams;
+  const notice = first(sp.notice);
+  const optionalLines = quote.lines
+    .filter((l) => l.lineKind === "OPTIONAL")
+    .map((l) => ({ id: l.id, label: `${l.description} (${formatZAR(l.amountCents ?? 0)})` }));
   const history = await listQuoteActivity(getDb(), actor, id);
 
   return (
@@ -94,6 +114,26 @@ export default async function QuotePage({ params }: { params: Promise<{ id: stri
           {formatCustomerNumber(quote.customer.number)}
         </span>
       </p>
+
+      {notice && Object.hasOwn(NOTICES, notice) ? (
+        <p
+          role="status"
+          className="mt-4 rounded-lg bg-ochre/10 px-3 py-2 text-sm text-charcoal ring-1 ring-ochre/30"
+        >
+          {NOTICES[notice]}
+        </p>
+      ) : null}
+      <div className="mt-4 space-y-3">
+        <QuoteFacts quote={quote} />
+        <ActionPanel
+          id={quote.id}
+          status={displayStatus(quote)}
+          isOwner={staff.role === "OWNER"}
+          recipientName={doc.preparedFor.name}
+          optionalLines={optionalLines}
+          today={todaySA()}
+        />
+      </div>
 
       <div className="mt-6">
         <QuoteDocumentView doc={doc} />
