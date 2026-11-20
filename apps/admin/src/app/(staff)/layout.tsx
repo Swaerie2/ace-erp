@@ -17,6 +17,11 @@ export default async function StaffLayout({ children }: { children: React.ReactN
               Customers
             </Link>
             {MANAGEMENT.includes(staff.role) ? (
+              <Link href="/quotes" className="text-charcoal/80 hover:text-forest">
+                Quotes
+              </Link>
+            ) : null}
+            {MANAGEMENT.includes(staff.role) ? (
               <Link href="/services" className="text-charcoal/80 hover:text-forest">
                 Services
               </Link>
