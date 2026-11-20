@@ -33,6 +33,7 @@ function fakeStore(opts: { scrubCount?: number; failOn?: string } = {}) {
     },
     contact: { updateMany: record("contact.updateMany") },
     property: { updateMany: record("property.updateMany") },
+    quote: { updateMany: record("quote.updateMany") },
     auditLog: { create: record("auditLog.create") },
   } as unknown as Store;
   return { store, calls };
@@ -48,6 +49,7 @@ describe("anonymiseCustomer write order", () => {
     expect(ops[scrubIndex]).toBe("customer.updateMany");
     expect(ops.indexOf("contact.updateMany")).toBeLessThan(scrubIndex);
     expect(ops.indexOf("property.updateMany")).toBeLessThan(scrubIndex);
+    expect(ops.indexOf("quote.updateMany")).toBeLessThan(scrubIndex);
     // Nothing writes to the customer after the scrub except the audit line.
     expect(ops.slice(scrubIndex + 1)).toEqual(["auditLog.create"]);
     // The final update is conditional, so a second run cannot slip through.

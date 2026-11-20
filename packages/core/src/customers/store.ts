@@ -4,7 +4,10 @@ import type { Prisma } from "../generated/prisma/client";
 import { DomainError, type Actor } from "./access";
 
 /** What the customer functions need. Works with the normal connection or a transaction. */
-export type Store = Pick<Db, "customer" | "contact" | "property" | "auditLog" | "staffUser">;
+export type Store = Pick<
+  Db,
+  "customer" | "contact" | "property" | "auditLog" | "staffUser" | "quote"
+>;
 
 /** Runs several writes as one all-or-nothing step. */
 export function inTx<T>(
