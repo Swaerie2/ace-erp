@@ -105,7 +105,12 @@ export function withKind(line: BuilderLine, kind: LineKind): BuilderLine {
   if (kind === "INCLUDED") {
     return { ...line, lineKind: kind, billing: null, frequency: null, amountText: "" };
   }
-  return withBilling({ ...line, lineKind: kind }, line.billing ?? "MONTHLY");
+  const next = withBilling({ ...line, lineKind: kind }, line.billing ?? "MONTHLY");
+  // A line newly made optional and monthly starts as "as required", like the suggested extras.
+  if (kind === "OPTIONAL" && line.lineKind !== "OPTIONAL" && next.billing === "MONTHLY") {
+    return { ...next, frequency: "AS_REQUIRED" };
+  }
+  return next;
 }
 
 export function withBilling(line: BuilderLine, billing: Billing): BuilderLine {

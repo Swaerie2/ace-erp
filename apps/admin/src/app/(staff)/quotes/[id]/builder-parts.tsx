@@ -6,6 +6,7 @@ import {
   LINE_KIND_LABELS,
   LINE_KINDS,
   LINE_BILLINGS,
+  MAX_LINES,
   bulletLines,
   formatZAR,
   quoteTotals,
@@ -171,7 +172,7 @@ export function LinesStep({
         such as weed treatment.
       </p>
 
-      {suggestMonthly ? (
+      {suggestMonthly && lines.length < MAX_LINES ? (
         <div className="mt-4 rounded-xl bg-ochre/10 p-4 ring-1 ring-ochre/30">
           <p className="text-sm text-charcoal">
             You have services switched on but no monthly price yet.
@@ -290,10 +291,14 @@ export function LinesStep({
       <button
         type="button"
         className={`${buttonSmall} mt-4`}
+        disabled={lines.length >= MAX_LINES}
         onClick={() => onChange([...lines, blankLine()])}
       >
         Add price line
       </button>
+      {lines.length >= MAX_LINES ? (
+        <p className="mt-2 text-sm text-charcoal/70">You can add up to {MAX_LINES} price lines.</p>
+      ) : null}
     </div>
   );
 }

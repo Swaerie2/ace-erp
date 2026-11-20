@@ -1,6 +1,6 @@
 "use client";
 
-import { buildQuoteDocument, snapshotWording, validateForIssue } from "@ace/core/client";
+import { MAX_LINES, buildQuoteDocument, snapshotWording, validateForIssue } from "@ace/core/client";
 import Link from "next/link";
 import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buttonClass } from "@/components/auth-card";
@@ -21,12 +21,24 @@ const STEPS = ["Scope", "Prices", "Details", "Review"] as const;
 export function QuoteBuilder({ initial }: { initial: BuilderInitial }) {
   const [state, setState] = useState<BuilderState>(initial.state);
   const [step, setStep] = useState(0);
-  const [fault, setFault] = useState<null | "error" | "conflict">(null);
+  // "error": the request failed (network or unexpected), so the same draft is retried every 5 s.
+  // "rejected": the server refused this content, so it is not retried until the draft changes.
+  // "conflict": changed elsewhere, so saving stops for good.
+  const [rawFault, setFault] = useState<null | "error" | "rejected" | "conflict">(null);
+  const [faultMessage, setFaultMessage] = useState("");
+  const [rejectedKey, setRejectedKey] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
+  const [finishing, setFinishing] = useState(false);
+  const [finishFailed, setFinishFailed] = useState(false);
+  const finishingRef = useRef(false);
 
   const payload = useMemo(() => toPayload(state), [state]);
   const payloadKey = useMemo(() => JSON.stringify(payload), [payload]);
   const [savedKey, setSavedKey] = useState(() => JSON.stringify(toPayload(initial.state)));
   const dirty = payloadKey !== savedKey;
+  // A refusal only counts while the draft is still exactly what was refused; any change (even back
+  // to the saved version) clears it from the screen and lets saving run again.
+  const fault = rawFault === "rejected" && payloadKey !== rejectedKey ? null : rawFault;
 
   // Refs hold what the async save needs to see at the moment it runs.
   const latest = useRef({ key: payloadKey, payload });
@@ -43,7 +55,10 @@ export function QuoteBuilder({ initial }: { initial: BuilderInitial }) {
     chain.current = chain.current.then(async () => {
       if (stopped.current) return;
       const { key, payload: body } = latest.current;
-      if (key === savedRef.current) return;
+      if (key === savedRef.current) {
+        setFault(null); // nothing left to save, so any earlier failure no longer matters
+        return;
+      }
       try {
         const result = await saveDraftAction(
           initial.id,
@@ -54,36 +69,45 @@ export function QuoteBuilder({ initial }: { initial: BuilderInitial }) {
           savedRef.current = key;
           setSavedKey(key);
           setFault(null);
+          setFaultMessage("");
+          setRejectedKey(null);
         } else if (result.conflict) {
           stopped.current = true;
           setFault("conflict");
         } else {
-          setFault("error");
+          // The server refused this content: do not hammer it with the same draft.
+          setFaultMessage(result.error);
+          setRejectedKey(key);
+          setFault("rejected");
         }
       } catch {
         setFault("error");
+        setRetry((n) => n + 1); // re-arms the 5 second timer even though fault is unchanged
       }
     });
     return chain.current;
   }, [initial.id]);
 
   // Save about 800 ms after the last change (and again if more changes arrived during a save).
+  // While a transient error is being retried the retry timer is in charge, and a draft the server
+  // refused is left alone until it changes.
   useEffect(() => {
-    if (!dirty || fault === "conflict") return;
+    if (!dirty || fault === "conflict" || fault === "error" || fault === "rejected") return;
     const timer = setTimeout(() => void run(), 800);
     return () => clearTimeout(timer);
   }, [dirty, payloadKey, savedKey, fault, run]);
 
-  // After a failed save, try again every 5 seconds.
+  // After a failed save, try again every 5 seconds, for as long as it keeps failing. Each attempt
+  // sends the newest draft.
   useEffect(() => {
     if (fault !== "error") return;
     const timer = setTimeout(() => void run(), 5000);
     return () => clearTimeout(timer);
-  }, [fault, run]);
+  }, [fault, retry, run]);
 
-  // Warn before leaving the page with unsaved changes.
+  // Warn before leaving the page with unsaved changes (not after a conflict: those cannot be saved).
   useEffect(() => {
-    if (!dirty && !fault) return;
+    if (fault === "conflict" || (!dirty && !fault)) return;
     const warn = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
@@ -93,9 +117,22 @@ export function QuoteBuilder({ initial }: { initial: BuilderInitial }) {
   const [issueState, issueAction, issuing] = useActionState(issueQuoteAction, undefined);
   const issueForm = useRef<HTMLFormElement>(null);
   async function finish() {
-    await run();
-    if (stopped.current) return;
-    issueForm.current?.requestSubmit();
+    if (finishingRef.current) return;
+    finishingRef.current = true;
+    setFinishing(true);
+    setFinishFailed(false);
+    try {
+      await run();
+      // Issue only when the newest draft is what the database holds.
+      if (stopped.current || latest.current.key !== savedRef.current) {
+        setFinishFailed(true);
+        return;
+      }
+      issueForm.current?.requestSubmit();
+    } finally {
+      finishingRef.current = false;
+      setFinishing(false);
+    }
   }
 
   // --- derived values for the screen -------------------------------------------------------------
@@ -163,7 +200,10 @@ export function QuoteBuilder({ initial }: { initial: BuilderInitial }) {
         (l) => l.lineKind === "OPTIONAL" && l.description === target.name,
       );
       const lines =
-        nowIncluded && target.kind === "OPTIONAL_EXTRA" && !alreadyThere
+        nowIncluded &&
+        target.kind === "OPTIONAL_EXTRA" &&
+        !alreadyThere &&
+        prev.lines.length < MAX_LINES
           ? [
               ...prev.lines,
               blankLine({
@@ -180,11 +220,13 @@ export function QuoteBuilder({ initial }: { initial: BuilderInitial }) {
   const status =
     fault === "conflict"
       ? "Changed on another device. Reload the page."
-      : fault === "error"
-        ? "Could not save, retrying…"
-        : dirty
-          ? "Saving…"
-          : "Saved";
+      : fault === "rejected"
+        ? `Could not save: ${faultMessage}`
+        : fault === "error"
+          ? "Could not save, retrying…"
+          : dirty
+            ? "Saving…"
+            : "Saved";
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -197,7 +239,7 @@ export function QuoteBuilder({ initial }: { initial: BuilderInitial }) {
       <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3">
         <h1 className="font-display text-2xl font-semibold text-forest">Draft quote</h1>
         <p
-          role="status"
+          role={fault === "rejected" ? "alert" : "status"}
           aria-live="polite"
           className={`text-sm font-semibold ${fault ? "text-red-700" : "text-charcoal/60"}`}
         >
@@ -306,16 +348,25 @@ export function QuoteBuilder({ initial }: { initial: BuilderInitial }) {
                 {issueState.error}
               </p>
             ) : null}
+            {finishFailed && (fault !== null || dirty) ? (
+              <p
+                role="alert"
+                className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800 ring-1 ring-red-200"
+              >
+                Could not save your latest changes, so the quote was not issued. Try again once it
+                says Saved.
+              </p>
+            ) : null}
             <form ref={issueForm} action={issueAction}>
               <input type="hidden" name="id" value={initial.id} />
             </form>
             <button
               type="button"
               onClick={() => void finish()}
-              disabled={problems.length > 0 || issuing || fault === "conflict"}
+              disabled={problems.length > 0 || issuing || finishing || fault !== null || dirty}
               className={buttonClass}
             >
-              {issuing ? "Issuing…" : "Finish and issue"}
+              {issuing || finishing ? "Issuing…" : "Finish and issue"}
             </button>
           </div>
         ) : null}
