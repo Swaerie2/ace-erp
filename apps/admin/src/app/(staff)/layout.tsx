@@ -10,8 +10,8 @@ export default async function StaffLayout({ children }: { children: React.ReactN
   return (
     <div className="min-h-screen">
       <header className="border-b border-charcoal/10 bg-white/60">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
-          <nav className="flex items-center gap-6 text-sm font-semibold">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+          <nav className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm font-semibold">
             <span className="font-display text-forest">ACE</span>
             <Link href="/customers" className="text-charcoal/80 hover:text-forest">
               Customers
@@ -24,6 +24,11 @@ export default async function StaffLayout({ children }: { children: React.ReactN
             {MANAGEMENT.includes(staff.role) ? (
               <Link href="/services" className="text-charcoal/80 hover:text-forest">
                 Services
+              </Link>
+            ) : null}
+            {staff.role === "OWNER" ? (
+              <Link href="/settings/quote-wording" className="text-charcoal/80 hover:text-forest">
+                Quote wording
               </Link>
             ) : null}
           </nav>
