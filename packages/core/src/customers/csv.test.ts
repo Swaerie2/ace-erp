@@ -23,8 +23,6 @@ const row = (over: Partial<RawImportRow> = {}): RawImportRow => ({
   property_suburb: "",
   property_city: "",
   frequency: "",
-  monthly_fee_rand: "",
-  extras: "",
   source: "",
   notes: "",
   ...over,
@@ -79,7 +77,6 @@ describe("mapImportRow", () => {
         phone: "082 123 4567",
         property_address: "1 Test St",
         frequency: "Fortnightly",
-        monthly_fee_rand: "R 850",
         type: "company",
       }),
       2,
@@ -90,7 +87,6 @@ describe("mapImportRow", () => {
       expect(r.row.contact.name).toBe("Test Person");
       expect(r.row.contact.phone).toBe("+27821234567");
       expect(r.row.property?.frequency).toBe("FORTNIGHTLY");
-      expect(r.row.property?.monthlyFee).toBe(85000);
     }
   });
   it("reports every problem with the line number", () => {
@@ -126,17 +122,11 @@ describe("mapImportRow", () => {
     }
   });
 
-  it.each([
-    ["frequency", { frequency: "weekly" }],
-    ["monthly_fee_rand", { monthly_fee_rand: "850" }],
-    ["extras", { extras: "weed treatment" }],
-  ])("needs a property address when %s is given", (_name, over) => {
-    const r = mapImportRow(row(over), 5);
+  it("needs a property address when a frequency is given", () => {
+    const r = mapImportRow(row({ frequency: "weekly" }), 5);
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.errors).toContain(
-        "property_address: needed when frequency, monthly_fee_rand or extras is given.",
-      );
+      expect(r.errors).toContain("property_address: needed when frequency is given.");
     }
   });
   it("is fine with no property columns at all, or a full property", () => {
@@ -153,7 +143,7 @@ describe("mapImportRow", () => {
         email: "nope",
         phone: "12",
         property_address: "1 Test St",
-        monthly_fee_rand: "lots",
+        property_city: "x".repeat(81),
       }),
       6,
     );
@@ -161,10 +151,10 @@ describe("mapImportRow", () => {
     if (!r.ok) {
       const starts = r.errors.map((e) => e.split(":")[0]);
       expect(starts).toEqual(
-        expect.arrayContaining(["display_name", "email", "phone", "monthly_fee_rand"]),
+        expect.arrayContaining(["display_name", "email", "phone", "property_city"]),
       );
       const text = r.errors.join(" | ");
-      for (const internal of ["displayName", "addressLine1", "monthlyFee", "contact email"]) {
+      for (const internal of ["displayName", "addressLine1", "contact email"]) {
         expect(text).not.toContain(internal);
       }
     }

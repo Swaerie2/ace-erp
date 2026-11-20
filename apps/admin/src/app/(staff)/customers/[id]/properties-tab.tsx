@@ -1,4 +1,4 @@
-import { formatZAR, type getCustomer } from "@ace/core";
+import type { getCustomer } from "@ace/core";
 import Link from "next/link";
 import { secondaryButtonClass } from "@/components/form";
 import { archivePropertyAction } from "../actions";
@@ -24,8 +24,6 @@ function toRow(p: Customer["properties"][number]): PropertyRow {
     terrainNotes: p.terrainNotes,
     frequency: p.frequency,
     preferredDay: p.preferredDay,
-    agreedMonthlyFeeCents: p.agreedMonthlyFeeCents,
-    extrasNote: p.extrasNote,
   };
 }
 
@@ -103,14 +101,6 @@ export function PropertiesTab({
                 </dd>
               </div>
               <div>
-                <dt className="inline text-charcoal/60">Monthly fee: </dt>
-                <dd className="inline">
-                  {p.agreedMonthlyFeeCents === null
-                    ? "not set"
-                    : formatZAR(p.agreedMonthlyFeeCents)}
-                </dd>
-              </div>
-              <div>
                 <dt className="inline text-charcoal/60">Lawn: </dt>
                 <dd className="inline">
                   {[
@@ -121,10 +111,6 @@ export function PropertiesTab({
                     .filter(Boolean)
                     .join(", ") || "—"}
                 </dd>
-              </div>
-              <div>
-                <dt className="inline text-charcoal/60">Extras: </dt>
-                <dd className="inline">{p.extrasNote || "—"}</dd>
               </div>
               {p.accessNotes ? (
                 <div className="sm:col-span-2">

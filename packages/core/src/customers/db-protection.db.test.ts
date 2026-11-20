@@ -48,23 +48,10 @@ describe.skipIf(!dbTestsEnabled)("customers database protections", () => {
     ).rejects.toThrow(/contacts_email_lowercase/);
   });
 
-  it("rejects a blank customer name and a negative fee", async () => {
+  it("rejects a blank customer name", async () => {
     await expect(
       withRollback((tx) => tx.customer.create({ data: { type: "PERSON", displayName: "   " } })),
     ).rejects.toThrow(/customers_display_name_not_blank/);
-    await expect(
-      withRollback(async (tx) => {
-        const c = await tx.customer.create({ data: { type: "PERSON", displayName: "Fee Test" } });
-        await tx.property.create({
-          data: {
-            customerId: c.id,
-            label: "x",
-            addressLine1: "1 Test St",
-            agreedMonthlyFeeCents: -1,
-          },
-        });
-      }),
-    ).rejects.toThrow(/properties_fee_not_negative/);
   });
 
   it("rejects a negative lawn size", async () => {

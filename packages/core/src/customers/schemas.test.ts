@@ -77,16 +77,14 @@ describe("contactSchema", () => {
 });
 
 describe("propertySchema", () => {
-  it("converts the fee to cents and numbers to integers", () => {
+  it("converts numbers to integers and checkboxes to booleans", () => {
     const p = propertySchema.parse({
       label: "Main",
       addressLine1: "1 Test Street",
-      monthlyFee: "R 850",
       lawnSizeSqm: "320",
       frequency: "WEEKLY",
       hasIrrigation: "on",
     });
-    expect(p.monthlyFee).toBe(85000);
     expect(p.lawnSizeSqm).toBe(320);
     expect(p.hasIrrigation).toBe(true);
   });

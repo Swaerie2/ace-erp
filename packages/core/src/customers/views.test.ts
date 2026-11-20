@@ -42,8 +42,6 @@ describe("crew view", () => {
       "contacts",
       "notes",
       "billingLine1",
-      "agreedMonthlyFeeCents",
-      "extrasNote",
       "companyName",
       "registrationNumber",
       "consentAt",

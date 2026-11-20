@@ -19,14 +19,7 @@ describe("hasPropertyInput", () => {
   });
 
   it("is true when any other property field has input, so it cannot be dropped silently", () => {
-    for (const field of [
-      "suburb",
-      "city",
-      "accessNotes",
-      "monthlyFee",
-      "frequency",
-      "preferredDay",
-    ]) {
+    for (const field of ["suburb", "city", "accessNotes", "frequency", "preferredDay"]) {
       expect(hasPropertyInput({ ...blank, [`property_${field}`]: "x" }, "property_"), field).toBe(
         true,
       );

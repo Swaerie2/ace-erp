@@ -41,11 +41,7 @@ const property = (street = "1 Testing Street") =>
     addressLine1: street,
     suburb: "Testville",
     frequency: "WEEKLY",
-    // An unusual amount, so the "crew must not see fees" test cannot match by accident
-    // (ids contain digits, so a round number like 850 could appear inside one).
-    monthlyFee: "851.37",
     accessNotes: "Gate code 1234",
-    extrasNote: "Weed treatment",
   });
 
 describe.skipIf(!dbTestsEnabled)("customers data layer", () => {
@@ -60,7 +56,7 @@ describe.skipIf(!dbTestsEnabled)("customers data layer", () => {
       const full = await getCustomer(tx, manager, id);
       expect(full?.contacts).toHaveLength(1);
       expect(full?.properties).toHaveLength(1);
-      expect(full?.properties[0]?.agreedMonthlyFeeCents).toBe(85137);
+      expect(full?.properties[0]?.addressLine1).toBe("1 Testing Street");
 
       const audit = await tx.auditLog.findMany({ where: { entityId: id } });
       expect(audit.map((a) => a.action)).toEqual(["customer.created"]);
@@ -173,7 +169,7 @@ describe.skipIf(!dbTestsEnabled)("customers data layer", () => {
         "suburb",
       ]);
       const text = JSON.stringify(view);
-      for (const secret of [c.email ?? "", c.phone ?? "", "85137", "851.37", "Weed", "internal"]) {
+      for (const secret of [c.email ?? "", c.phone ?? "", "internal"]) {
         expect(text).not.toContain(secret);
       }
       const list = await listCustomersForCrew(tx, crew, { q: key });

@@ -65,7 +65,6 @@ export async function anonymiseCustomer(
       accessNotes: null,
       grassType: null,
       terrainNotes: null,
-      extrasNote: null,
     },
   });
 

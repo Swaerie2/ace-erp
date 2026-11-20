@@ -1,6 +1,5 @@
 "use client";
 
-import { formatCentsForInput } from "@ace/core/client";
 import Link from "next/link";
 import { useActionState, useRef } from "react";
 import { buttonClass } from "@/components/auth-card";
@@ -25,8 +24,6 @@ export type PropertyRow = {
   terrainNotes: string | null;
   frequency: string | null;
   preferredDay: string | null;
-  agreedMonthlyFeeCents: number | null;
-  extrasNote: string | null;
 };
 
 function toValues(p?: PropertyRow): Record<string, string> {
@@ -44,9 +41,6 @@ function toValues(p?: PropertyRow): Record<string, string> {
     terrainNotes: p.terrainNotes,
     frequency: p.frequency,
     preferredDay: p.preferredDay,
-    monthlyFee:
-      p.agreedMonthlyFeeCents === null ? null : formatCentsForInput(p.agreedMonthlyFeeCents),
-    extrasNote: p.extrasNote,
   };
   for (const [key, value] of Object.entries(optional))
     if (value !== null && value !== "") v[key] = String(value);

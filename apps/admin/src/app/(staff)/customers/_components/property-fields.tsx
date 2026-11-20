@@ -95,7 +95,7 @@ export function PropertyFields({ values: v, errors: e, prefix = "" }: Props) {
         error={e[n("terrainNotes")]}
         hint="Slopes, hedges, difficult areas"
       />
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2">
         <SelectField
           label="Service"
           name={n("frequency")}
@@ -116,22 +116,7 @@ export function PropertyFields({ values: v, errors: e, prefix = "" }: Props) {
           ]}
           error={e[n("preferredDay")]}
         />
-        <TextField
-          label="Agreed monthly fee (R)"
-          name={n("monthlyFee")}
-          inputMode="decimal"
-          defaultValue={v[n("monthlyFee")]}
-          error={e[n("monthlyFee")]}
-          hint="e.g. 850 or 850.50"
-        />
       </div>
-      <TextField
-        label="Optional extras"
-        name={n("extrasNote")}
-        defaultValue={v[n("extrasNote")]}
-        error={e[n("extrasNote")]}
-        hint="e.g. weed treatment"
-      />
     </div>
   );
 }

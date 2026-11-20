@@ -178,29 +178,26 @@ model Contact {
 
 /// A place where work happens. A customer can have several.
 model Property {
-  id                    String            @id @default(uuid()) @db.Uuid
-  customerId            String            @db.Uuid
-  label                 String
-  addressLine1          String
-  addressLine2          String?
-  suburb                String?
-  city                  String?
-  postalCode            String?
-  mapUrl                String?
+  id            String            @id @default(uuid()) @db.Uuid
+  customerId    String            @db.Uuid
+  label         String
+  addressLine1  String
+  addressLine2  String?
+  suburb        String?
+  city          String?
+  postalCode    String?
+  mapUrl        String?
   /// Gate codes, dogs, who to call. Staff only, never shown to clients.
-  accessNotes           String?
-  lawnSizeSqm           Int?
-  grassType             String?
-  hasIrrigation         Boolean           @default(false)
-  terrainNotes          String?
-  frequency             ServiceFrequency?
-  preferredDay          String?
-  /// Plain field for now; replaced by the accepted quote's lines in Module 3.
-  agreedMonthlyFeeCents Int?
-  extrasNote            String?
-  archivedAt            DateTime?
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
+  accessNotes   String?
+  lawnSizeSqm   Int?
+  grassType     String?
+  hasIrrigation Boolean           @default(false)
+  terrainNotes  String?
+  frequency     ServiceFrequency?
+  preferredDay  String?
+  archivedAt    DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 
   customer Customer @relation(fields: [customerId], references: [id])
   quotes   Quote[]
@@ -386,8 +383,8 @@ model QuoteScopeItem {
 /// One price line. PRICED lines are in the totals, OPTIONAL lines are the client's choice,
 /// INCLUDED lines have no charge.
 model QuoteLine {
-  id          String         @id @default(uuid()) @db.Uuid
-  quoteId     String         @db.Uuid
+  id          String          @id @default(uuid()) @db.Uuid
+  quoteId     String          @db.Uuid
   sortOrder   Int
   lineKind    QuoteLineKind
   /// Empty for INCLUDED lines.
@@ -398,7 +395,7 @@ model QuoteLine {
   /// Whole cents, above zero for PRICED and OPTIONAL; empty for INCLUDED.
   amountCents Int?
   /// Set on acceptance: did the client take this optional add-on.
-  chosen      Boolean        @default(false)
+  chosen      Boolean         @default(false)
 
   quote Quote @relation(fields: [quoteId], references: [id])
 

@@ -67,8 +67,6 @@ const PROPERTY: Record<string, Rule> = {
   terrainNotes: "scrubbed",
   frequency: "kept: enum (weekly, monthly...)",
   preferredDay: "kept: day of the week, not personal",
-  agreedMonthlyFeeCents: "kept: money, old invoices must still add up",
-  extrasNote: "scrubbed",
   archivedAt: "kept: timestamp",
   createdAt: "kept: timestamp",
   updatedAt: "kept: timestamp",
