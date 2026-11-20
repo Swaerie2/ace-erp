@@ -1,10 +1,22 @@
-import { formatCustomerNumber, getDb, getQuote, listQuoteActivity, displayStatus } from "@ace/core";
+import { formatCentsForInput } from "@ace/core/client";
+import {
+  displayStatus,
+  formatCustomerNumber,
+  formatQuoteReference,
+  getDb,
+  getQuote,
+  getQuoteWording,
+  listQuoteActivity,
+  todaySA,
+} from "@ace/core";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 import { toActor } from "@/lib/actor";
 import { requireStaff } from "@/lib/auth";
 import { QuoteStatusBadge } from "../status-badge";
+import { QuoteBuilder } from "./builder";
+import type { BuilderInitial } from "./builder-types";
 import { loadDocument } from "./document-input";
 import { QuoteHistory } from "./history";
 import { QuoteDocumentView } from "./quote-document";
@@ -17,6 +29,49 @@ export default async function QuotePage({ params }: { params: Promise<{ id: stri
   const quote = await getQuote(getDb(), actor, id);
   if (!quote) notFound();
   const { doc } = await loadDocument(quote, actor);
+
+  if (quote.status === "DRAFT") {
+    const db = getDb();
+    const org = await db.organisationSettings.findUniqueOrThrow({ where: { id: "singleton" } });
+    const { updatedAt, ...wording } = await getQuoteWording(db, actor);
+    void updatedAt;
+    const revisionOf = quote.revisionOfId ? await getQuote(db, actor, quote.revisionOfId) : null;
+    const initial: BuilderInitial = {
+      id: quote.id,
+      version: quote.draftVersion,
+      state: {
+        scope: quote.scopeItems.map((s) => ({
+          serviceId: s.serviceId,
+          name: s.name,
+          description: s.description,
+          kind: s.kind,
+          included: s.included,
+        })),
+        lines: quote.lines.map((l) => ({
+          key: l.id,
+          lineKind: l.lineKind,
+          billing: l.billing,
+          frequency: l.frequency,
+          description: l.description,
+          amountText: l.amountCents === null ? "" : formatCentsForInput(l.amountCents),
+        })),
+        validUntil: quote.validUntil.toISOString().slice(0, 10),
+        internalNote: quote.internalNote ?? "",
+      },
+      revisionOfReference: revisionOf ? formatQuoteReference(revisionOf) : null,
+      customerName: quote.customer.displayName,
+      siteLabel: quote.property.label,
+      property: {
+        lawnSizeSqm: quote.property.lawnSizeSqm,
+        accessNotes: quote.property.accessNotes,
+      },
+      preparedFor: doc.preparedFor,
+      wording,
+      org: { legalName: org.legalName, tradingName: org.tradingName, vatEnabled: org.vatEnabled },
+      today: todaySA(),
+    };
+    return <QuoteBuilder initial={initial} />;
+  }
   const history = await listQuoteActivity(getDb(), actor, id);
 
   return (

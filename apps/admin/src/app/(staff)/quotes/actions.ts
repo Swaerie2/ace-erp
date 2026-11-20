@@ -5,10 +5,15 @@ import {
   createCustomer,
   createQuote,
   customerSchema,
+  deleteDraft,
+  DraftConflictError,
+  draftSchema,
   findDuplicateContacts,
   inTx,
+  issueQuote,
   MANAGEMENT,
   propertySchema,
+  saveDraft,
 } from "@ace/core";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -106,4 +111,64 @@ export async function quickAddQuoteAction(
     return failure(error, values);
   }
   redirect(`/quotes/${id}`);
+}
+
+type SaveResult = { ok: true; version: number } | { ok: false; conflict: boolean; error: string };
+
+/** Called by the builder about 800 ms after the last change. `payload` is a DraftInput as JSON. */
+export async function saveDraftAction(quoteId: string, payload: string): Promise<SaveResult> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const id = idSchema.safeParse(quoteId);
+  if (!id.success) return { ok: false, conflict: false, error: "Refresh the page and try again." };
+  let raw: unknown;
+  try {
+    raw = JSON.parse(payload);
+  } catch {
+    return { ok: false, conflict: false, error: "Refresh the page and try again." };
+  }
+  const parsed = draftSchema.safeParse(raw);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      conflict: false,
+      error: parsed.error.issues[0]?.message ?? "Some details are not valid.",
+    };
+  }
+  try {
+    const { version } = await inTx((tx) => saveDraft(tx, actor, id.data, parsed.data));
+    return { ok: true, version };
+  } catch (error) {
+    if (error instanceof DraftConflictError) {
+      return { ok: false, conflict: true, error: error.message };
+    }
+    const state = failure(error); // a refused role redirects; anything unexpected is rethrown
+    return { ok: false, conflict: false, error: state?.error ?? "Could not save." };
+  }
+}
+
+/** Finish and issue. An incomplete quote comes back as a list of problems, one per line. */
+export async function issueQuoteAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const id = idSchema.safeParse(formData.get("id"));
+  if (!id.success) return { error: "Something went wrong. Refresh the page and try again." };
+  try {
+    await inTx((tx) => issueQuote(tx, actor, id.data));
+  } catch (error) {
+    return failure(error);
+  }
+  redirect(`/quotes/${id.data}`);
+}
+
+export async function deleteDraftAction(formData: FormData): Promise<void> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const id = idSchema.parse(formData.get("id"));
+  try {
+    await inTx((tx) => deleteDraft(tx, actor, id));
+  } catch (error) {
+    failure(error);
+  }
+  redirect("/quotes");
 }
