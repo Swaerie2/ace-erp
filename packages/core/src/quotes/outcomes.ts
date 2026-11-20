@@ -1,5 +1,6 @@
 import { assertRole, DomainError, MANAGEMENT, OWNER_ONLY, type Actor } from "../customers/access";
 import { activateCustomer } from "../customers/customers";
+import { findEditableCustomer, lockCustomer } from "../customers/store";
 import type { Prisma } from "../generated/prisma/client";
 import { displayStatus, formatQuoteReference, fromDateString, todaySA } from "./reference";
 import type { AcceptInput, DeclineInput } from "./schemas";
@@ -29,20 +30,32 @@ export async function acceptQuote(
       throw new DomainError("This quote has expired. Revise it to give it new dates.");
     }
   };
-  check(await findQuote(store, id));
+  // Look first, without any lock, so a refused request takes no lock at all.
+  const first = await findQuote(store, id);
+  check(first);
+  if (input.startDate < todaySA()) throw new DomainError("The start date must be today or later.");
+  // Lock order everywhere: customer, then property, then quote. The customer lock (refused for an
+  // anonymised customer) stops personal text being written back onto one; the property lock makes
+  // accepts and reversals for one property take turns.
+  await findEditableCustomer(store, first.customerId);
+  await lockCustomer(store, first.customerId);
+  await store.property.updateMany({
+    where: { id: first.propertyId },
+    data: { updatedAt: new Date() },
+  });
   await lockQuote(store, id);
   const quote = await findQuote(store, id);
   check(quote);
-  if (input.startDate < todaySA()) throw new DomainError("The start date must be today or later.");
+  const chosenIds = [...new Set(input.chosenLineIds)];
   const optionalIds = new Set(
     quote.lines.filter((l) => l.lineKind === "OPTIONAL").map((l) => l.id),
   );
-  if (input.chosenLineIds.some((lineId) => !optionalIds.has(lineId))) {
+  if (chosenIds.some((lineId) => !optionalIds.has(lineId))) {
     throw new DomainError("Only optional add-ons can be chosen.");
   }
 
   await store.quoteLine.updateMany({
-    where: { quoteId: id, id: { in: input.chosenLineIds } },
+    where: { quoteId: id, id: { in: chosenIds } },
     data: { chosen: true },
   });
   await store.quote.update({
@@ -55,6 +68,9 @@ export async function acceptQuote(
       acceptedStartDate: fromDateString(input.startDate),
       acceptanceNote: input.note ?? null,
       acceptedByStaffId: actor.id,
+      // A freshly accepted quote starts as a live agreement.
+      agreementEndedAt: null,
+      agreementReplacedById: null,
     },
   });
 
@@ -62,8 +78,7 @@ export async function acceptQuote(
   const isMonthly = quote.lines.some(
     (l) =>
       l.billing === "MONTHLY" &&
-      (l.lineKind === "PRICED" ||
-        (l.lineKind === "OPTIONAL" && input.chosenLineIds.includes(l.id))),
+      (l.lineKind === "PRICED" || (l.lineKind === "OPTIONAL" && chosenIds.includes(l.id))),
   );
   if (isMonthly) {
     const earlier = await store.quote.findMany({
@@ -77,11 +92,14 @@ export async function acceptQuote(
       select: { id: true },
     });
     for (const old of earlier) {
-      await store.quote.update({
-        where: { id: old.id },
+      // Conditional, so a quote that changed state in the meantime is never marked as replaced.
+      const { count } = await store.quote.updateMany({
+        where: { id: old.id, status: "ACCEPTED", agreementEndedAt: null },
         data: { agreementEndedAt: new Date(), agreementReplacedById: id },
       });
-      await logQuoteEvent(store, actor, "quote.agreement_ended", old.id, { replacedBy: id });
+      if (count === 1) {
+        await logQuoteEvent(store, actor, "quote.agreement_ended", old.id, { replacedBy: id });
+      }
     }
   }
 
@@ -99,7 +117,7 @@ export async function acceptQuote(
 
   await logQuoteEvent(store, actor, "quote.accepted", id, {
     method: input.method,
-    optionsChosen: input.chosenLineIds.length,
+    optionsChosen: chosenIds.length,
     customerFlag,
   });
   return { customerFlag };
@@ -112,9 +130,10 @@ export async function declineQuote(
   input: DeclineInput,
 ): Promise<void> {
   assertRole(actor, MANAGEMENT);
-  if ((await findQuote(store, id)).status !== "ISSUED") {
-    throw new DomainError("Only an issued quote can be declined.");
-  }
+  const first = await findQuote(store, id);
+  if (first.status !== "ISSUED") throw new DomainError("Only an issued quote can be declined.");
+  await findEditableCustomer(store, first.customerId);
+  await lockCustomer(store, first.customerId);
   await lockQuote(store, id);
   if ((await findQuote(store, id)).status !== "ISSUED") {
     throw new DomainError("Only an issued quote can be declined.");
@@ -136,14 +155,21 @@ export async function reverseAcceptance(
   assertRole(actor, OWNER_ONLY);
   const text = note.trim();
   if (!text) throw new DomainError("Say why the acceptance is being reversed.");
-  if (text.length > 300) throw new DomainError("Keep the reason under 300 characters.");
+  if (text.length > 300) throw new DomainError("Keep the reason to 300 characters or fewer.");
   const check = (q: Awaited<ReturnType<typeof findQuote>>) => {
     if (q.status !== "ACCEPTED") throw new DomainError("Only an accepted quote can be reversed.");
     if (q.agreementEndedAt) {
       throw new DomainError("A later quote has replaced this agreement. Reverse that one first.");
     }
   };
-  check(await findQuote(store, id));
+  const first = await findQuote(store, id);
+  check(first);
+  await findEditableCustomer(store, first.customerId);
+  await lockCustomer(store, first.customerId);
+  await store.property.updateMany({
+    where: { id: first.propertyId },
+    data: { updatedAt: new Date() },
+  });
   await lockQuote(store, id);
   check(await findQuote(store, id));
 
