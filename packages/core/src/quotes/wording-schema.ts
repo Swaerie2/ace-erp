@@ -1,25 +1,38 @@
 import { z } from "zod";
 
-const line = (max: number) => z.string().trim().min(1, "This line is empty.").max(max);
+const tooLong = (max: number) => `Keep this to ${max} characters or fewer.`;
+const tooMany = (max: number) => `Add at most ${max} items.`;
+const VALIDITY_MESSAGE = "Enter a whole number of days from 1 to 365.";
+
+const line = (max: number) =>
+  z
+    .string()
+    .trim()
+    .min(1, "This line is empty.")
+    .max(max, `Keep each line to ${max} characters or fewer.`);
 const clause = z.object({
-  heading: z.string().trim().min(1, "Enter a heading.").max(80),
-  body: z.string().trim().min(1, "Enter the wording.").max(1500),
+  heading: z.string().trim().min(1, "Enter a heading.").max(80, tooLong(80)),
+  body: z.string().trim().min(1, "Enter the wording.").max(1500, tooLong(1500)),
 });
 export type Clause = z.output<typeof clause>;
 
 /** The standard wording the owner edits. Each issued quote keeps a frozen copy (see snapshotWording). */
 export const wordingSchema = z.object({
-  tagline: z.string().trim().min(1, "Enter a tagline.").max(120),
-  standardExclusions: z.array(line(300)).max(20),
-  monthlyTerms: z.array(clause).max(30),
-  onceOffTerms: z.array(clause).max(30),
-  commonTerms: z.array(clause).max(30),
-  everyVisitPoints: z.array(line(200)).max(15),
-  defaultValidityDays: z.number().int().min(1).max(365),
-  registrationNumber: z.string().trim().max(60),
-  phone: z.string().trim().max(40),
-  email: z.string().trim().max(120),
-  website: z.string().trim().max(120),
+  tagline: z.string().trim().min(1, "Enter a tagline.").max(120, tooLong(120)),
+  standardExclusions: z.array(line(300)).max(20, tooMany(20)),
+  monthlyTerms: z.array(clause).max(30, tooMany(30)),
+  onceOffTerms: z.array(clause).max(30, tooMany(30)),
+  commonTerms: z.array(clause).max(30, tooMany(30)),
+  everyVisitPoints: z.array(line(200)).max(15, tooMany(15)),
+  defaultValidityDays: z
+    .number({ error: VALIDITY_MESSAGE })
+    .int(VALIDITY_MESSAGE)
+    .min(1, VALIDITY_MESSAGE)
+    .max(365, VALIDITY_MESSAGE),
+  registrationNumber: z.string().trim().max(60, tooLong(60)),
+  phone: z.string().trim().max(40, tooLong(40)),
+  email: z.string().trim().max(120, tooLong(120)),
+  website: z.string().trim().max(120, tooLong(120)),
 });
 export type WordingInput = z.output<typeof wordingSchema>;
 

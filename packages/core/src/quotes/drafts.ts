@@ -127,6 +127,14 @@ export async function saveDraft(
 
   await lockQuote(store, id);
   const quote = await read();
+  // Anonymise scrubs this quote row, so it had to wait for the lock above: this read is current.
+  const owner = await store.customer.findUnique({
+    where: { id: quote.customerId },
+    select: { anonymisedAt: true },
+  });
+  if (owner?.anonymisedAt) {
+    throw new DomainError("This customer has been anonymised and cannot be changed.");
+  }
   for (const item of quote.scopeItems) {
     const included = flags.get(item.serviceId);
     if (included !== undefined && included !== item.included) {
@@ -233,11 +241,13 @@ function buildWhere(query: QuoteListQuery, today: string): Prisma.QuoteWhereInpu
     const or: Prisma.QuoteWhereInput[] = [
       { customer: { displayName: { contains: term, mode: "insensitive" } } },
     ];
-    const ref = /^(?:quo-)?(?:(\d{4})-)?(\d{1,6})$/i.exec(term);
+    // "QUO-2026-0104", "2026-104" or "104", optionally followed by a revision mark such as " R2".
+    const ref = /^(?:quo-)?(?:(\d{4})-)?(\d{1,6})(?:\s*r(\d+))?$/i.exec(term);
     if (ref?.[2]) {
       or.push({
         numberSeq: Number(ref[2]),
         ...(ref[1] ? { numberYear: Number(ref[1]) } : {}),
+        ...(ref[3] ? { revision: Number(ref[3]) } : {}),
       });
     }
     and.push({ OR: or });

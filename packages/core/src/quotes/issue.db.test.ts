@@ -260,6 +260,24 @@ describe.skipIf(!dbTestsEnabled)("revising, withdrawing and sending", () => {
     });
   });
 
+  it("finds a quote by its full reference, with or without the revision mark", async () => {
+    await withRollback(async (tx) => {
+      const original = await makeIssued(tx);
+      const { id: r2 } = await reviseQuote(tx, manager, original.id);
+      await issueQuote(tx, manager, r2);
+      const scope = { customerId: original.customerId };
+
+      const both = await listQuotes(tx, manager, { ...scope, q: original.reference });
+      expect(both.items.map((i) => i.id).sort()).toEqual([original.id, r2].sort());
+      const onlyR2 = await listQuotes(tx, manager, { ...scope, q: `${original.reference} R2` });
+      expect(onlyR2.items.map((i) => i.id)).toEqual([r2]);
+      const lower = await listQuotes(tx, manager, { ...scope, q: `${original.reference}  r2` });
+      expect(lower.items.map((i) => i.id)).toEqual([r2]);
+      const noneR3 = await listQuotes(tx, manager, { ...scope, q: `${original.reference} R3` });
+      expect(noneR3.items).toHaveLength(0);
+    });
+  });
+
   it("cannot revise a draft", async () => {
     await withRollback(async (tx) => {
       const c = await makeCustomer(tx);

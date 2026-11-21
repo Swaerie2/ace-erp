@@ -66,7 +66,7 @@ export const draftSchema = z.object({
   version: z.number().int().min(1),
   validUntil: dateString,
   internalNote: z.string().trim().max(2000, "Keep this under 2000 characters."),
-  scope: z.array(z.object({ serviceId: z.uuid(), included: z.boolean() })).max(50),
+  scope: z.array(z.object({ serviceId: z.uuid(), included: z.boolean() })).max(200),
   lines: z.array(draftLineSchema).max(MAX_LINES),
 });
 export type DraftInput = z.output<typeof draftSchema>;

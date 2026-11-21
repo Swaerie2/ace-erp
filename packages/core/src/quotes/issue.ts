@@ -1,4 +1,5 @@
 import { assertRole, DomainError, MANAGEMENT, type Actor } from "../customers/access";
+import { findEditableCustomer, lockCustomer } from "../customers/store";
 import type { Prisma } from "../generated/prisma/client";
 import { contentHash } from "./content";
 import {
@@ -200,10 +201,20 @@ export async function reviseQuote(
 ): Promise<{ id: string }> {
   assertRole(actor, MANAGEMENT);
   const allowed = ["ISSUED", "ACCEPTED", "DECLINED"];
-  if (!allowed.includes((await findQuote(store, id)).status)) {
-    throw new DomainError("This quote cannot be revised.");
+  const first = await findQuote(store, id);
+  if (!allowed.includes(first.status)) throw new DomainError("This quote cannot be revised.");
+  // Lock order: customer, then quote. An anonymised customer's quote is never copied into a draft.
+  await findEditableCustomer(store, first.customerId);
+  await lockCustomer(store, first.customerId);
+  // Lock the whole numbered chain, so two people revising different versions take turns.
+  if (first.numberYear !== null && first.numberSeq !== null) {
+    await store.quote.updateMany({
+      where: { numberYear: first.numberYear, numberSeq: first.numberSeq },
+      data: { updatedAt: new Date() },
+    });
+  } else {
+    await lockQuote(store, id);
   }
-  await lockQuote(store, id);
   const source = await findQuote(store, id);
   if (!allowed.includes(source.status)) throw new DomainError("This quote cannot be revised.");
   // One open revision draft per number chain, so two drafts can never claim the same revision number.

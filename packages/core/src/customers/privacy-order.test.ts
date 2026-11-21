@@ -40,13 +40,17 @@ function fakeStore(opts: { scrubCount?: number; failOn?: string } = {}) {
 }
 
 describe("anonymiseCustomer write order", () => {
-  it("scrubs contacts and properties first, and the customer row (with anonymisedAt) last", async () => {
+  it("scrubs contacts, properties and quotes first, and the customer row (with anonymisedAt) last", async () => {
     const { store, calls } = fakeStore();
     await anonymiseCustomer(store, owner, ID, "C-0007");
 
     const ops = calls.map((c) => c.op);
     const scrubIndex = calls.findIndex((c) => c.data && "anonymisedAt" in c.data);
     expect(ops[scrubIndex]).toBe("customer.updateMany");
+    // indexOf is -1 for a missing call, which would pass "less than" below: check each one ran.
+    expect(ops).toContain("contact.updateMany");
+    expect(ops).toContain("property.updateMany");
+    expect(ops).toContain("quote.updateMany");
     expect(ops.indexOf("contact.updateMany")).toBeLessThan(scrubIndex);
     expect(ops.indexOf("property.updateMany")).toBeLessThan(scrubIndex);
     expect(ops.indexOf("quote.updateMany")).toBeLessThan(scrubIndex);

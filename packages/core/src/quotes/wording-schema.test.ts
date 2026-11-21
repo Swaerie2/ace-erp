@@ -34,6 +34,30 @@ describe("wordingSchema", () => {
   });
 });
 
+describe("wordingSchema messages", () => {
+  const message = (over: object) => {
+    const result = wordingSchema.safeParse({ ...DEFAULT_WORDING, ...over });
+    return result.success ? null : result.error.issues[0]?.message;
+  };
+  it("explains a bad validity in plain words", () => {
+    const plain = "Enter a whole number of days from 1 to 365.";
+    for (const bad of [0, 400, Number.NaN, 2.5]) {
+      expect(message({ defaultValidityDays: bad }), String(bad)).toBe(plain);
+    }
+  });
+  it("explains a line or clause that is too long", () => {
+    expect(message({ everyVisitPoints: ["x".repeat(201)] })).toBe(
+      "Keep each line to 200 characters or fewer.",
+    );
+    expect(message({ commonTerms: [{ heading: "h".repeat(81), body: "x" }] })).toBe(
+      "Keep this to 80 characters or fewer.",
+    );
+    expect(message({ commonTerms: [{ heading: "h", body: "x".repeat(1501) }] })).toBe(
+      "Keep this to 1500 characters or fewer.",
+    );
+  });
+});
+
 describe("snapshotWording", () => {
   it("includes only the terms that apply, plus the common clauses", () => {
     const monthlyOnly = snapshotWording(DEFAULT_WORDING, [priced("MONTHLY")], org);
