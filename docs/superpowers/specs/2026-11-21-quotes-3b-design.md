@@ -15,13 +15,13 @@ A client opens a private link, reads their quote, chooses their optional add-ons
 3. The link shows the client's name and the property address, **not** their email or phone.
 4. Link previews (WhatsApp, Telegram, Facebook and similar) see only a bare page that names ACE and shows nothing about the quote, and do not count as the client viewing it.
 5. Rate limiting is kept in the database, with the visitor's IP stored only as a hash.
-6. The portal app talks to the database through a small, reviewed set of functions only. A separate low-privilege database login is a follow-up for before real clients use the link (see "Known limitations").
+6. The portal app talks to the database through a small, reviewed set of functions only, **and through its own low-privilege database login** (the role `ace_portal`). Using that login is a **blocker for going live**: in production the portal refuses to start without it.
 7. The quote document and the PDF layout move into one shared package, so the staff app and the portal use the same code.
 8. If the customer is paused or archived when the client accepts, the acceptance is still recorded and staff see a note on the quote.
 
 ## Out of scope
 
-Email or WhatsApp sending from the app; one-time codes; the client login and onboarding (Module 4); staff alerts beyond the Quotes list; a low-privilege database role (follow-up).
+Email or WhatsApp sending from the app; one-time codes; the client login and onboarding (Module 4); staff alerts beyond the Quotes list. (Setting the portal login's password and the live connection setting happens at go-live, by the owner, outside git.)
 
 ## Data model (one new migration, written by the build, approved by the owner before it is applied)
 
@@ -40,6 +40,24 @@ All new objects follow the existing hardening: Row Level Security on with no pol
 Check constraint: `linkToken` is null or at least 40 characters long.
 
 The existing columns `acceptedMethod` (value `CLIENT_LINK`), `acceptedByName`, `acceptedStartDate`, `acceptedIp`, `acceptedUserAgent`, `declineReason` and `contentHash` already exist and are used as designed. `linkToken` is a secret that opens personal data, so **anonymising a customer sets it to null** (the privacy guard test classifies the new columns).
+
+### The portal database role (`ace_portal`)
+
+The same migration creates a database role `ace_portal` with **no login** and no default access, and gives it only what the five public functions need. The owner turns it into a login at go-live by setting a password in the database (never in git, never in chat) and giving the portal app the connection string as `PORTAL_DATABASE_URL`.
+
+Grants (column level; Row Level Security stays on, with one policy per table that lets only this role through to the granted columns):
+
+| Table             | Read                                                                                                                                                         | Write                                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| quotes            | everything the client page, the PDF and the acceptance rules need: **not** `internalNote`, `reversalNote`, staff ids, `sentAt`, `sentMethod`, `draftVersion` | status, the acceptance and decline columns, agreement columns, `firstViewedAt`, `lastViewedAt`, `updatedAt` |
+| quote_lines       | all columns                                                                                                                                                  | `chosen`                                                                                                    |
+| quote_scope_items | all columns                                                                                                                                                  | none                                                                                                        |
+| customers         | `id`, `status`, `anonymisedAt`                                                                                                                               | `status`, `updatedAt` (activating a lead, and the lock)                                                     |
+| properties        | `id`, `customerId`, `archivedAt`                                                                                                                             | `updatedAt` (the lock)                                                                                      |
+| audit_log         | `id` only                                                                                                                                                    | insert                                                                                                      |
+| public_link_hits  | all                                                                                                                                                          | insert, update, delete                                                                                      |
+
+Nothing else: no contacts, no staff users, no services, no wording table, no organisation settings, no other customer or property columns. Because Prisma returns the whole row from an insert or update, every database call in the public functions names the columns it wants (`select`), and the audit helper does the same.
 
 ### public_link_hits (rate limiting)
 
@@ -99,11 +117,12 @@ Per visitor (hashed IP) in a 10-minute window: 120 page views and PDF downloads,
 ## Technical design
 
 - **Shared package `@ace/ui`** (`packages/ui`): `QuoteDocumentView` and `QuotePdf`, moved out of the staff app unchanged in behaviour. Both apps depend on it. Each app's `globals.css` adds a Tailwind `@source` line so the package's classes are generated. `@react-pdf/renderer` moves to this package (and stays an external package in both Next configs).
-- **Core** (`packages/core/src/quotes`):
+- **Core** (`packages/core/src/quotes`) (every database call in the public path uses an explicit `select`, so it works with the column-level grants above):
   - `link.ts`: token generation (`crypto.randomBytes(32)`), staff functions `createQuoteLink` and `revokeQuoteLink` (role: owner or manager), issuing calls token creation.
   - `acceptance.ts`: the shared internal acceptance routine used by both the staff function and the client function, taking an "acting party" (staff actor, or the client link with IP and browser) so the role check, the staff id and the audit actor type differ but every rule and lock is the same. `activateCustomer` is split the same way (an internal version without the role check, used only after the quote checks pass).
-  - `public.ts`: the only functions the portal may call: `getPublicQuote(token)`, `recordLinkView(token)`, `acceptViaLink(token, input, context)`, `declineViaLink(token, input, context)`, and `checkRateLimit(kind, ipHash)`. None takes an `Actor`; each does its own checks and returns plain data (no database objects).
+  - `public.ts`: the only functions the portal may call: `getPublicQuote(token)`, `recordLinkView(token)`, `acceptViaLink(token, input, context)`, `declineViaLink(token, input, context)`, and `checkRateLimit(kind, ipHash)`. None takes an `Actor`; each does its own checks and returns plain data (no database objects). They use the same lock order as the staff functions (customer, then property, then quote) with narrow versions of the customer helpers that read only `id`, `status` and `anonymisedAt`.
   - `bots.ts`: pure `isPreviewBot(userAgent)` and `hashIp(ip)`.
+- **Portal database connection:** the portal app builds its own Prisma connection from `PORTAL_DATABASE_URL`. In development it falls back to `DATABASE_URL` (so a developer need not create the login); when `NODE_ENV` is production and `PORTAL_DATABASE_URL` is missing, the portal fails at startup and says why.
 - **Portal app** (`apps/portal`): `/q/[token]` page, accept and decline server actions, `/q/[token]/pdf` route, the not-found, expired, replaced, withdrawn, accepted, declined, too-many-requests and bot pages, headers for `/q/*` in `next.config.ts`. The client's IP comes from the standard forwarded-for header (first address) and is hashed before any storage; the raw IP is stored only on the acceptance record itself (as proof) and scrubbed on anonymise.
 - **Staff app**: client link panel and the facts additions; no other change.
 
@@ -112,18 +131,18 @@ Per visitor (hashed IP) in a 10-minute window: 120 page views and PDF downloads,
 - The link grants one quote and nothing else. 256 bits of randomness; lookup is an exact match on the unique column; wrong codes cost the same as unknown codes. No list, search or "recent" endpoint exists on the portal.
 - The portal page shows the client's name and the property address but not their email or phone, and never the internal note, the staff names, other customers or the audit history.
 - The raw IP and browser are stored only on an acceptance (proof) and are scrubbed when the customer is anonymised, together with the token. Hashed IPs are the only thing the rate limiter keeps.
-- The portal app holds a full database connection (the same as the staff app) but exposes only the five public functions. This is the main residual risk and is listed under Known limitations.
+- The portal connects as `ace_portal`, which can read and change only the few columns listed above. Even a bug in the portal cannot read contacts, staff, other customers' details, internal notes or the audit history. The staff app is unchanged and keeps its own connection.
 - Every response from `/q/*` is `no-store`, `noindex` and `no-referrer`.
 
 ## Testing
 
 - **Unit tests:** `isPreviewBot` (the listed bots and a normal browser), `hashIp`, token shape (43 characters, URL-safe, different each time), the public view-state decision (valid, expired, replaced, withdrawn, accepted, declined).
-- **Database tests** (dev database, rolled-back transactions): token created on issue; revoke and re-create; every public function with a wrong, revoked and valid token (the not-found result is identical); view tracking sets first and last viewed only for Issued, Accepted and Declined quotes and never for a revoked link; client accept (add-ons, start date, agreement rule, lead activation, paused or archived customer left unchanged, actor type CUSTOMER, no names in the audit, double accept records once, expired and withdrawn refused, past start date refused); client decline; the rate limiter (allows up to the limit, refuses over it, separate buckets, old windows cleaned); anonymise nulls the token and the proof columns; the shared acceptance routine still behaves exactly as before for staff (the 3a tests keep passing unchanged); the database protections for the new column and table.
+- **Database tests** (dev database, rolled-back transactions): token created on issue; revoke and re-create; every public function with a wrong, revoked and valid token (the not-found result is identical); view tracking sets first and last viewed only for Issued, Accepted and Declined quotes and never for a revoked link; client accept (add-ons, start date, agreement rule, lead activation, paused or archived customer left unchanged, actor type CUSTOMER, no names in the audit, double accept records once, expired and withdrawn refused, past start date refused); client decline; the rate limiter (allows up to the limit, refuses over it, separate buckets, old windows cleaned); anonymise nulls the token and the proof columns; the shared acceptance routine still behaves exactly as before for staff (the 3a tests keep passing unchanged); the database protections for the new column and table; **the portal role**: each public function is run after `SET LOCAL ROLE ace_portal` inside the rolled-back transaction (so the real grants are exercised) and still works, while direct statements as that role are refused for everything not granted (reading `contacts`, `staff_users`, `customers.displayName`, `quotes.internalNote`, updating `customers.displayName`, deleting quotes, reading `audit_log` rows beyond `id`), and a catalogue test lists the exact privileges so a later migration cannot widen them silently.
 - **Real browser (both apps):** staff issue a quote and copy the link; open it in a clean window (no staff session): the document, the form, errors keep what was typed, accept with an add-on, confirmation, PDF; the staff page shows the acceptance, last viewed, the agreed scope and the active customer; decline path; expired (set the date back), replaced (revise and issue), withdrawn, revoked and wrong code all show the right page and the not-found pages look identical; double click on Accept; rate limit page (lower the limit through a test override or repeated requests); link preview bot user-agent gets the bare page and records no view; response headers on `/q/*`; phone width; no staff data visible to the client.
 
 ## Known limitations and follow-ups
 
-- The portal's database connection is as powerful as the staff app's. Before real clients use the link, create a low-privilege database login for the portal (it needs read on quotes, scope items, lines, services and organisation data, and update on a few quote columns) and move the portal to it.
+- **Go-live blocker:** set the `ace_portal` password in the live database and `PORTAL_DATABASE_URL` in the live portal's settings (the portal will not start in production without it). Added to the "Before real customer data goes in" checklist.
 - There is no email or alert when a client accepts; staff look at the Quotes list.
 - A link that was forwarded to someone else works for them too (the typed name and the IP record who accepted).
 - The Revise button and the send, accept and decline buttons are still offered on an anonymised customer's quote (the system refuses them). Fix with the 3b screens if cheap.
