@@ -225,15 +225,21 @@ export function LinesStep({
                   onChange={(f) => update(index, { ...l, frequency: f })}
                 />
               ) : null}
-              <label className="block text-sm font-medium text-charcoal">
-                Description
-                <input
-                  value={l.description}
-                  maxLength={300}
-                  onChange={(e) => update(index, { ...l, description: e.target.value })}
-                  className={inputClass}
-                />
-              </label>
+              <div>
+                <label className="block text-sm font-medium text-charcoal">
+                  Description
+                  <input
+                    value={l.description}
+                    maxLength={300}
+                    aria-describedby={`line-description-hint-${l.key}`}
+                    onChange={(e) => update(index, { ...l, description: e.target.value })}
+                    className={inputClass}
+                  />
+                </label>
+                <p id={`line-description-hint-${l.key}`} className="mt-1 text-xs text-charcoal/60">
+                  No personal details here (names, phone numbers, addresses).
+                </p>
+              </div>
               {l.lineKind !== "INCLUDED" ? (
                 <label className="block text-sm font-medium text-charcoal">
                   Amount (R)

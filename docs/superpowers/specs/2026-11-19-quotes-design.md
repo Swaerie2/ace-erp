@@ -154,8 +154,9 @@ never get the same number. The year is the South African year of issue.
 ### Database protections
 
 Checks: status and kind values by enum; amount above zero for priced and optional lines and null
-for included lines; `numberYear` and `numberSeq` both set or both null; a draft has no number;
-monthly priced lines have a frequency. The unique index on (`numberYear`, `numberSeq`, `revision`).
+for included lines; `numberYear` and `numberSeq` both set or both null; a draft has no number.
+The unique index on (`numberYear`, `numberSeq`, `revision`). The rule that a monthly priced line
+has a frequency is enforced when the quote is issued, not by a database check.
 
 ### Changes to existing tables
 

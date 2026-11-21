@@ -8,6 +8,7 @@ import {
 } from "@ace/core/client";
 import type { QuoteDisplayStatus } from "@ace/core";
 import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { buttonClass, inputClass } from "@/components/auth-card";
 import {
   FormMessage,
@@ -48,6 +49,16 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       </summary>
       <div className="mt-3">{children}</div>
     </details>
+  );
+}
+
+/** Disabled while the form is being submitted, so a double tap cannot mark it twice. */
+function MarkSentButton() {
+  const { pending } = useFormStatus();
+  return (
+    <button type="submit" disabled={pending} className={secondaryButtonClass}>
+      {pending ? "Saving…" : "Mark as sent"}
+    </button>
   );
 }
 
@@ -202,9 +213,7 @@ export function ActionPanel(props: Props) {
                   ))}
                 </select>
               </label>
-              <button type="submit" className={secondaryButtonClass}>
-                Mark as sent
-              </button>
+              <MarkSentButton />
             </form>
           </Section>
           <Section title="Record acceptance">

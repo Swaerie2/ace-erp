@@ -3,17 +3,20 @@ import Link from "next/link";
 import { formatDate } from "@/lib/format";
 import { QuoteStatusBadge } from "../../quotes/status-badge";
 
-type Items = Awaited<ReturnType<typeof listQuotes>>["items"];
+type Result = Awaited<ReturnType<typeof listQuotes>>;
 
 export function QuotesTab({
   customerId,
-  items,
+  customerName,
+  result,
   canQuote,
 }: {
   customerId: string;
-  items: Items;
+  customerName: string;
+  result: Pick<Result, "items" | "total">;
   canQuote: boolean;
 }) {
+  const { items, total } = result;
   return (
     <div className="space-y-4">
       {canQuote ? (
@@ -56,6 +59,18 @@ export function QuotesTab({
           })}
         </ul>
       )}
+      {total > items.length ? (
+        <p className="text-sm text-charcoal/70">
+          Showing the latest {items.length} of {total}.{" "}
+          <Link
+            href={`/quotes?q=${encodeURIComponent(customerName.slice(0, 100))}`}
+            className="inline-flex min-h-10 items-center text-forest underline"
+          >
+            See all
+          </Link>
+          .
+        </p>
+      ) : null}
     </div>
   );
 }

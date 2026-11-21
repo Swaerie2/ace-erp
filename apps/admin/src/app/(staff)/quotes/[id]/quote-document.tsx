@@ -116,8 +116,8 @@ export function QuoteDocumentView({ doc }: { doc: QuoteDocument }) {
                 </p>
                 {s.bullets.length > 0 ? (
                   <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-charcoal">
-                    {s.bullets.map((b) => (
-                      <li key={b}>{b}</li>
+                    {s.bullets.map((b, i) => (
+                      <li key={`${i}-${b}`}>{b}</li>
                     ))}
                   </ul>
                 ) : null}
@@ -131,11 +131,11 @@ export function QuoteDocumentView({ doc }: { doc: QuoteDocument }) {
               Not included (quoted separately on request)
             </p>
             <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-charcoal/70">
-              {doc.scope.excludedNames.map((n) => (
-                <li key={n}>{n}</li>
+              {doc.scope.excludedNames.map((n, i) => (
+                <li key={`${i}-${n}`}>{n}</li>
               ))}
-              {doc.scope.standardExclusions.map((n) => (
-                <li key={n}>{n}</li>
+              {doc.scope.standardExclusions.map((n, i) => (
+                <li key={`${i}-${n}`}>{n}</li>
               ))}
             </ul>
           </div>
@@ -201,8 +201,8 @@ export function QuoteDocumentView({ doc }: { doc: QuoteDocument }) {
       {doc.termSections.map((section) => (
         <Section key={section.title} title={`Terms: ${section.title}`}>
           <dl className="space-y-2 text-sm">
-            {section.clauses.map((c) => (
-              <div key={c.heading}>
+            {section.clauses.map((c, i) => (
+              <div key={`${i}-${c.heading}`}>
                 <dt className="font-semibold text-charcoal">{c.heading}</dt>
                 <dd className="text-charcoal/80">{c.body}</dd>
               </div>
@@ -214,8 +214,8 @@ export function QuoteDocumentView({ doc }: { doc: QuoteDocument }) {
       {doc.everyVisitPoints.length > 0 ? (
         <Section title="Every visit on record">
           <ul className="list-disc space-y-0.5 pl-5 text-sm text-charcoal">
-            {doc.everyVisitPoints.map((p) => (
-              <li key={p}>{p}</li>
+            {doc.everyVisitPoints.map((p, i) => (
+              <li key={`${i}-${p}`}>{p}</li>
             ))}
           </ul>
         </Section>

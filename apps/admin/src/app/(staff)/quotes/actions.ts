@@ -182,6 +182,15 @@ export async function deleteDraftAction(formData: FormData): Promise<void> {
   redirect("/quotes");
 }
 
+/**
+ * For a button that cannot show an error itself: a refusal because the quote changed goes back to
+ * the quote with a fixed notice code (nothing typed ends up in the address bar).
+ */
+function backWithNotice(error: unknown, id: string): never {
+  failure(error); // a refused role redirects; anything unexpected is rethrown
+  redirect(`/quotes/${id}?notice=cannot`);
+}
+
 const sentMethod = z.enum(SENT_METHODS);
 const BAD_REQUEST = "Something went wrong. Refresh the page and try again.";
 
@@ -193,7 +202,7 @@ export async function markSentAction(formData: FormData): Promise<void> {
   try {
     await inTx((tx) => markSent(tx, actor, id, method));
   } catch (error) {
-    failure(error);
+    backWithNotice(error, id);
   }
   redirect(`/quotes/${id}`);
 }
@@ -246,7 +255,7 @@ export async function withdrawQuoteAction(formData: FormData): Promise<void> {
   try {
     await inTx((tx) => withdrawQuote(tx, actor, id));
   } catch (error) {
-    failure(error);
+    backWithNotice(error, id);
   }
   redirect(`/quotes/${id}`);
 }
@@ -260,8 +269,7 @@ export async function reviseQuoteAction(formData: FormData): Promise<void> {
   try {
     draftId = (await inTx((tx) => reviseQuote(tx, actor, id))).id;
   } catch (error) {
-    failure(error);
-    redirect(`/quotes/${id}`);
+    backWithNotice(error, id);
   }
   redirect(`/quotes/${draftId}`);
 }

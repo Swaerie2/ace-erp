@@ -19,7 +19,11 @@ const LABELS: Record<string, string> = {
 /** Only fixed words from the audit entry are shown, never anything typed by a person. */
 function detail(action: string, after: unknown): string {
   const method = (after as { method?: unknown } | null)?.method;
-  if (action === "quote.sent" && typeof method === "string" && method in SENT_METHOD_LABELS) {
+  if (
+    action === "quote.sent" &&
+    typeof method === "string" &&
+    Object.hasOwn(SENT_METHOD_LABELS, method)
+  ) {
     return ` · ${SENT_METHOD_LABELS[method as keyof typeof SENT_METHOD_LABELS]}`;
   }
   return "";

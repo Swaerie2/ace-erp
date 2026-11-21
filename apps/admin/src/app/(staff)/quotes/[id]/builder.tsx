@@ -49,6 +49,14 @@ export function QuoteBuilder({ initial }: { initial: BuilderInitial }) {
   useEffect(() => {
     latest.current = { key: payloadKey, payload };
   }, [payloadKey, payload]);
+  // Saves already queued must not fire after the page is left. The flag is reset on mount so
+  // React's development double-mount does not leave it set; a re-render never touches it.
+  useEffect(() => {
+    stopped.current = false;
+    return () => {
+      stopped.current = true;
+    };
+  }, []);
 
   /** Saves the newest draft after any save already in flight. Never two requests at once. */
   const run = useCallback((): Promise<void> => {
@@ -217,16 +225,16 @@ export function QuoteBuilder({ initial }: { initial: BuilderInitial }) {
     });
   }
 
+  // The polite status line only ever says Saved, Saving or that saving needs attention. The
+  // refusal and conflict messages are separate alerts, so a screen reader hears each once.
   const status =
-    fault === "conflict"
-      ? "Changed on another device. Reload the page."
-      : fault === "rejected"
-        ? `Could not save: ${faultMessage}`
-        : fault === "error"
-          ? "Could not save, retrying…"
-          : dirty
-            ? "Saving…"
-            : "Saved";
+    fault === "conflict" || fault === "rejected"
+      ? "Not saved"
+      : fault === "error"
+        ? "Could not save, retrying…"
+        : dirty
+          ? "Saving…"
+          : "Saved";
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -239,13 +247,21 @@ export function QuoteBuilder({ initial }: { initial: BuilderInitial }) {
       <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3">
         <h1 className="font-display text-2xl font-semibold text-forest">Draft quote</h1>
         <p
-          role={fault === "rejected" ? "alert" : "status"}
+          role="status"
           aria-live="polite"
           className={`text-sm font-semibold ${fault ? "text-red-700" : "text-charcoal/60"}`}
         >
           {status}
         </p>
       </div>
+      {fault === "rejected" ? (
+        <p
+          role="alert"
+          className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800 ring-1 ring-red-200"
+        >
+          Could not save: {faultMessage}
+        </p>
+      ) : null}
       <p className="mt-1 text-charcoal">
         {initial.customerName}
         <span className="text-charcoal/60"> · {initial.siteLabel}</span>

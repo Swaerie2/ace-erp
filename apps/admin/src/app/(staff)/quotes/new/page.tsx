@@ -32,7 +32,18 @@ export default async function NewQuotePage({ searchParams }: { searchParams: Pro
   if (customerParam) {
     if (!z.uuid().safeParse(customerParam).success) notFound();
     const customer = await getCustomer(getDb(), actor, customerParam);
-    if (!customer || customer.anonymisedAt) notFound();
+    if (!customer) notFound();
+    if (customer.anonymisedAt) {
+      return (
+        <div className="mx-auto max-w-2xl">
+          {back}
+          <h1 className="mt-2 font-display text-2xl font-semibold text-forest">New quote</h1>
+          <p className="mt-6 text-charcoal/70">
+            This customer has been anonymised and cannot be quoted.
+          </p>
+        </div>
+      );
+    }
     const archived = customer.status === "ARCHIVED";
     return (
       <div className="mx-auto max-w-2xl">
@@ -59,7 +70,7 @@ export default async function NewQuotePage({ searchParams }: { searchParams: Pro
             This customer has no property yet.{" "}
             <Link
               href={`/customers/${customer.id}?tab=properties&add=1`}
-              className="text-forest underline"
+              className="inline-flex min-h-10 items-center text-forest underline"
             >
               Add a property
             </Link>{" "}
@@ -81,7 +92,7 @@ export default async function NewQuotePage({ searchParams }: { searchParams: Pro
                     <button
                       type="submit"
                       className="min-h-10 rounded-full bg-forest px-5 py-2 font-display text-sm font-semibold text-cream hover:bg-forest-deep"
-                      aria-label={`Start a quote for ${p.label}`}
+                      aria-label={`Start quote for ${p.label}`}
                     >
                       Start quote
                     </button>

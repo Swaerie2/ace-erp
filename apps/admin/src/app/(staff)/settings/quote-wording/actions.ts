@@ -6,14 +6,15 @@ import { toActor } from "@/lib/actor";
 import { requireStaff } from "@/lib/auth";
 import { failure, type FormState } from "@/lib/form";
 
+/** Names as they appear on the page, so an error points at a heading the owner can see. */
 const AREAS: Record<string, string> = {
   tagline: "Tagline",
   standardExclusions: "Standard exclusions",
-  monthlyTerms: "Monthly terms",
+  monthlyTerms: "Monthly contract terms",
   onceOffTerms: "Once-off terms",
   commonTerms: "General terms",
-  everyVisitPoints: "Every visit points",
-  defaultValidityDays: "Default validity",
+  everyVisitPoints: "Every visit on record",
+  defaultValidityDays: "Default days a quote is valid",
   registrationNumber: "Registration number",
   phone: "Phone",
   email: "Email",
@@ -33,7 +34,10 @@ export async function saveWordingAction(_prev: FormState, formData: FormData): P
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     const area = AREAS[String(issue?.path[0] ?? "")] ?? "Wording";
-    const row = typeof issue?.path[1] === "number" ? ` (item ${issue.path[1] + 1})` : "";
+    const key = String(issue?.path[0] ?? "");
+    // The two text boxes list one line per entry; the clause lists show "Item N" on each card.
+    const noun = key === "standardExclusions" || key === "everyVisitPoints" ? "line" : "item";
+    const row = typeof issue?.path[1] === "number" ? ` (${noun} ${issue.path[1] + 1})` : "";
     return { error: `${area}${row}: ${issue?.message ?? "not valid."}`, nonce: Date.now() };
   }
   try {

@@ -52,9 +52,11 @@ function ClauseEditor({
       <ul className="space-y-3">
         {clauses.map((c, i) => (
           <li key={i} className="space-y-2 rounded-2xl bg-white/70 p-4 ring-1 ring-charcoal/10">
+            <p className="text-sm font-semibold text-forest">Item {i + 1}</p>
             <label className="block text-sm font-medium text-charcoal">
               Heading
               <input
+                aria-label={`${title} item ${i + 1} heading`}
                 value={c.heading}
                 maxLength={80}
                 onChange={(e) =>
@@ -66,6 +68,7 @@ function ClauseEditor({
             <label className="block text-sm font-medium text-charcoal">
               Wording
               <textarea
+                aria-label={`${title} item ${i + 1} wording`}
                 value={c.body}
                 rows={4}
                 maxLength={1500}
@@ -117,7 +120,14 @@ function ClauseEditor({
   );
 }
 
-export function WordingForm({ initial }: { initial: WordingValues }) {
+export function WordingForm({
+  initial,
+  saved = false,
+}: {
+  initial: WordingValues;
+  /** The page was opened right after a save. */
+  saved?: boolean;
+}) {
   const [state, action, pending] = useActionState(saveWordingAction, undefined);
   const [v, setV] = useState({
     ...initial,
@@ -125,8 +135,12 @@ export function WordingForm({ initial }: { initial: WordingValues }) {
     pointsText: initial.everyVisitPoints.join("\n"),
     validityText: String(initial.defaultValidityDays),
   });
-  const set = <K extends keyof typeof v>(key: K, value: (typeof v)[K]) =>
+  // "Wording saved." is driven by the address, so it goes once something is edited or refused.
+  const [edited, setEdited] = useState(false);
+  const set = <K extends keyof typeof v>(key: K, value: (typeof v)[K]) => {
+    setEdited(true);
     setV((prev) => ({ ...prev, [key]: value }));
+  };
 
   const payload = useMemo(
     () =>
@@ -171,6 +185,11 @@ export function WordingForm({ initial }: { initial: WordingValues }) {
   return (
     <form action={action} className="mt-6 space-y-8">
       <input type="hidden" name="payload" value={payload} />
+      {saved && !edited && !state?.error ? (
+        <p role="status" className="rounded-lg bg-forest/10 px-3 py-2 text-sm text-forest">
+          Wording saved.
+        </p>
+      ) : null}
 
       <section className="space-y-4">
         <h2 className="font-display text-lg font-semibold text-forest">Basics</h2>

@@ -13,7 +13,6 @@ export default async function QuoteWordingPage({
   const actor = await toActor(staff);
   const sp = await searchParams;
   const { updatedAt, ...wording } = await getQuoteWording(getDb(), actor);
-  void updatedAt;
   return (
     <div className="mx-auto max-w-3xl">
       <h1 className="font-display text-2xl font-semibold text-forest">Quote wording</h1>
@@ -21,12 +20,12 @@ export default async function QuoteWordingPage({
         The standard wording printed on every new quote. Changes apply to future quotes only; a
         quote that has been issued keeps the wording it was issued with.
       </p>
-      {first(sp.saved) === "1" ? (
-        <p role="status" className="mt-4 rounded-lg bg-forest/10 px-3 py-2 text-sm text-forest">
-          Wording saved.
-        </p>
-      ) : null}
-      <WordingForm initial={wording} />
+      {/* A new key after every save starts the form afresh, so its "saved" banner shows again. */}
+      <WordingForm
+        key={updatedAt.toISOString()}
+        initial={wording}
+        saved={first(sp.saved) === "1"}
+      />
     </div>
   );
 }

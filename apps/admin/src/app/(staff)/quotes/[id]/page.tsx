@@ -16,6 +16,7 @@ import { z } from "zod";
 import { toActor } from "@/lib/actor";
 import { requireStaff } from "@/lib/auth";
 import { first } from "@/lib/search-params";
+import { deleteDraftAction } from "../actions";
 import { QuoteStatusBadge } from "../status-badge";
 import { ActionPanel } from "./action-panel";
 import { QuoteBuilder } from "./builder";
@@ -28,6 +29,8 @@ import { QuoteFacts } from "./quote-facts";
 const NOTICES: Record<string, string> = {
   paused: "Accepted. The customer is paused, so they were not made active. Check the customer.",
   archived: "Accepted. The customer is archived and was left unchanged. Check the customer.",
+  cannot:
+    "That could not be done. The quote may have changed. Check its status below and try again.",
 };
 
 export default async function QuotePage({
@@ -43,6 +46,30 @@ export default async function QuotePage({
   const actor = await toActor(staff);
   const quote = await getQuote(getDb(), actor, id);
   if (!quote) notFound();
+
+  if (quote.status === "DRAFT" && quote.customer.anonymisedAt) {
+    // The customer's details were wiped, so this draft is never opened for editing again.
+    return (
+      <div className="mx-auto max-w-3xl">
+        <Link
+          href="/quotes"
+          className="inline-flex min-h-10 items-center text-sm text-forest hover:underline"
+        >
+          ← Quotes
+        </Link>
+        <h1 className="mt-2 font-display text-2xl font-semibold text-forest">Draft quote</h1>
+        <p className="mt-3 rounded-lg bg-ochre/10 px-3 py-2 text-sm text-charcoal ring-1 ring-ochre/30">
+          This customer has been anonymised, so this draft can no longer be edited.
+        </p>
+        <form action={deleteDraftAction} className="mt-6">
+          <input type="hidden" name="id" value={quote.id} />
+          <button type="submit" className="min-h-10 text-sm font-semibold text-red-700 underline">
+            Delete this draft
+          </button>
+        </form>
+      </div>
+    );
+  }
   const { doc } = await loadDocument(quote, actor);
 
   if (quote.status === "DRAFT") {

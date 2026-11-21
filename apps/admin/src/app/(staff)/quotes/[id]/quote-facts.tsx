@@ -76,6 +76,13 @@ export function QuoteFacts({ quote }: { quote: Quote }) {
       </Row>,
     );
   }
+  if (quote.internalNote) {
+    rows.push(
+      <Row key="internal" label="Internal note (staff only)">
+        <span className="whitespace-pre-line">{quote.internalNote}</span>
+      </Row>,
+    );
+  }
   if (rows.length === 0) return null;
   return (
     <dl className="space-y-1 rounded-2xl bg-white/70 p-4 text-sm ring-1 ring-charcoal/10">

@@ -122,7 +122,8 @@ export default async function CustomerPage({
         ) : tab === "quotes" ? (
           <QuotesTab
             customerId={id}
-            items={(await listQuotes(getDb(), actor, { customerId: id, pageSize: 50 })).items}
+            customerName={customer.displayName}
+            result={await listQuotes(getDb(), actor, { customerId: id, pageSize: 50 })}
             canQuote={customer.status !== "ARCHIVED" && !customer.anonymisedAt}
           />
         ) : (

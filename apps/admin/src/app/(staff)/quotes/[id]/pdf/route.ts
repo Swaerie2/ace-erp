@@ -16,7 +16,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!quote || quote.status === "DRAFT") return new Response("Not found", { status: 404 });
 
   const { doc } = await loadDocument(quote, actor);
-  // Called as a function (not createElement) so the element is typed as the Document that renderToBuffer expects.
+  // Called as a function (not createElement) so the element is typed as the Document that
+  // renderToBuffer expects. That means QuotePdf must stay hook-free (it runs outside a React
+  // render) and must return the <Document> element as its root.
   const buffer = await renderToBuffer(QuotePdf({ doc }));
   const filename = `${doc.reference.replaceAll(" ", "-")}.pdf`;
   return new Response(new Uint8Array(buffer), {

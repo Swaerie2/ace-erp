@@ -146,8 +146,10 @@ These apply to every module. A module is not finished until it follows all of th
   contacts in Module 3.
 - The row lock is a touch of `updatedAt`. Switch to `SELECT ... FOR UPDATE` before Module 3 locks
   customers.
-- Extend `anonymiseCustomer` and `privacy-coverage.test.ts` to every new table that holds customer
-  data (quotes, invoices), and drive that test from the set of scrubbed fields.
+- ~~Extend `anonymiseCustomer`, `privacy-coverage.test.ts` and the export to quotes.~~ Done in
+  Module 3a. The draft-save and revise paths also refuse an anonymised customer's quote, so
+  personal text cannot be written back into one. Still to extend when they exist: invoices and any
+  other table that holds customer data, and drive that test from the set of scrubbed fields.
 - Imported customers have no per-customer audit row (the import writes one line with counts).
 - Bind form ids to their customer in core (for example a contact id must belong to the customer
   in the URL) before Module 4 adds client logins.
@@ -245,10 +247,13 @@ These apply to every module. A module is not finished until it follows all of th
 ### Known limitations and follow-ups
 
 - Quotes have no client link yet (Phase 3b). Until then staff share the PDF themselves.
+- For Phase 3b: `acceptQuote` is staff-bound (role check, staff id, `STAFF` audit actor, and the
+  `activateCustomer` role check). The client link will need a shared internal accept function that
+  takes an actor type, with the staff action and the client action both calling it.
 - The wording row lists (exclusions, terms, every-visit points) are stored as JSON.
 - The customer Activity tab does not list quote events. They appear on the quote itself.
-- `quote_lines.description` is staff text and is assumed to be free of personal details. A hint in
-  the builder could be added.
+- `quote_lines.description` is staff text and is assumed to be free of personal details. The
+  builder shows a short hint under the field, but nothing enforces it.
 - Two staff saving the one wording row at the same moment can overwrite each other (it is a single
   settings row).
 - The quote number counter is per year and gap-free only inside the issuing transaction.

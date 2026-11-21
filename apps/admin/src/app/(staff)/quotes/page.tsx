@@ -13,7 +13,7 @@ type Search = { q?: Param; status?: Param; page?: Param };
 
 const MAX_QUERY = 100;
 const MAX_PAGE = 10_000;
-const FILTER_LABELS: Record<string, string> = {
+const FILTER_LABELS: Record<"ALL" | (typeof QUOTE_FILTERS)[number], string> = {
   ALL: "All",
   DRAFT: "Draft",
   ISSUED: "Issued",
@@ -71,7 +71,7 @@ export default async function QuotesPage({ searchParams }: { searchParams: Promi
       </form>
 
       <nav className="mt-4 flex flex-wrap gap-2 text-sm font-semibold" aria-label="Status filter">
-        {["ALL", ...QUOTE_FILTERS].map((f) => {
+        {(["ALL", ...QUOTE_FILTERS] as const).map((f) => {
           const active = f === "ALL" ? !status : f === status;
           return (
             <Link
@@ -135,7 +135,10 @@ export default async function QuotesPage({ searchParams }: { searchParams: Promi
       {pages > 1 ? (
         <nav className="mt-6 flex items-center justify-between text-sm" aria-label="Pages">
           {page > 1 ? (
-            <Link href={link({ page: page - 1 })} className="text-forest hover:underline">
+            <Link
+              href={link({ page: page - 1 })}
+              className="inline-flex min-h-10 items-center px-2 text-forest hover:underline"
+            >
               Previous
             </Link>
           ) : (
@@ -145,7 +148,10 @@ export default async function QuotesPage({ searchParams }: { searchParams: Promi
             Page {page} of {pages} ({result.total} quotes)
           </span>
           {page < pages ? (
-            <Link href={link({ page: page + 1 })} className="text-forest hover:underline">
+            <Link
+              href={link({ page: page + 1 })}
+              className="inline-flex min-h-10 items-center px-2 text-forest hover:underline"
+            >
               Next
             </Link>
           ) : (
