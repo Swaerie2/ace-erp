@@ -52,9 +52,9 @@ Each module is built, tested and approved before the next begins.
 
 Requirements carried forward to later modules:
 
-- **Module 3b (Quotes): client link.** A private link per quote so the client can accept or
-  decline (see the Quotes section). Extra work asked for later is simply a new quote for the same
-  property.
+- ~~**Module 3b (Quotes): client link.** A private link per quote so the client can accept or
+  decline.~~ Done in Module 3b (see the Quotes sections below). Extra work asked for later is
+  simply a new quote for the same property.
 - **Module 6 (Jobs): crew see the agreed scope** for each property, so included work and extras
   are clear on the day.
 
@@ -237,7 +237,8 @@ These apply to every module. A module is not finished until it follows all of th
   reversed. The privacy guard test covers every quote column, and the customer export includes the
   customer's quotes.
 - **PDF:** generated on the server with the built-in PDF fonts (Helvetica), so no font files are
-  bundled. The route is staff only.
+  bundled. The staff route is staff only; clients get the same PDF (without their email or phone)
+  from the portal at `/q/<token>/pdf`, which is refused for bots and rate limited.
 - **Hand-written SQL:** the check constraints, the RLS and REVOKE statements, the unique index on
   the quote number and the seeded `quote_wording` row in the quotes migration are hand-written SQL
   that Prisma does not know about (same note as services). Any generated migration must be read for
@@ -302,9 +303,8 @@ These apply to every module. A module is not finished until it follows all of th
   cannot set its own status), while the PDF route returns a real HTTP 429.
 - The client's address is taken from the first `x-forwarded-for` entry. That is only trustworthy on
   a host that overwrites the header (Vercel does). Check this when choosing the live host.
-- The customer data export (`exportCustomerData` in `packages/core/src/customers/privacy.ts`)
-  includes whole quote rows, so it now includes the live link code. Follow-up: leave `linkToken`
-  out of the export.
+- ~~The customer data export includes the live link code.~~ Done: `exportCustomerData` leaves
+  `linkToken` out of the quote rows it returns.
 - The portal has no automated browser tests. The real-browser check is done by hand, as listed in
   the Module 3b spec.
 
