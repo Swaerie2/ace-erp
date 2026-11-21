@@ -5,6 +5,7 @@ export * from "./content";
 export * from "./document";
 export * from "./drafts";
 export * from "./issue";
+export * from "./link";
 export * from "./outcomes";
 export * from "./public-state";
 export * from "./rate-limit-window";

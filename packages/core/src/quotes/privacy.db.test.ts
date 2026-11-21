@@ -53,6 +53,7 @@ describe.skipIf(!dbTestsEnabled)("quotes and the privacy tools", () => {
       const before = await findQuote(tx, accepted.id);
       expect(before.recipientName).toBeTruthy();
       expect(before.internalNote).toBe("Gate code 9999");
+      expect(before.linkToken).not.toBeNull();
 
       await anonymiseCustomer(
         tx,
@@ -75,6 +76,7 @@ describe.skipIf(!dbTestsEnabled)("quotes and the privacy tools", () => {
         "acceptedUserAgent",
         "declineReason",
         "reversalNote",
+        "linkToken",
       ] as const) {
         expect(after[column], column).toBeNull();
       }

@@ -12,6 +12,7 @@ import {
 } from "./reference";
 import { validateForIssue } from "./schemas";
 import { findQuote, lockQuote, logQuoteEvent, requireQuotable, type QuoteStore } from "./store";
+import { generateLinkToken } from "./token";
 import { readQuoteWording } from "./wording";
 import { snapshotWording } from "./wording-schema";
 
@@ -173,6 +174,10 @@ export async function issueQuote(
       siteAddress,
       wordingSnapshot: snapshot as unknown as Prisma.InputJsonValue,
       contentHash: hash,
+      linkToken: generateLinkToken(),
+      linkCreatedAt: new Date(),
+      firstViewedAt: null,
+      lastViewedAt: null,
     },
   });
 

@@ -68,7 +68,7 @@ export async function anonymiseCustomer(
     },
   });
 
-  // Quotes carry a frozen copy of the recipient and site, plus typed names, notes and reasons.
+  // Quotes carry a frozen copy of the recipient and site, plus typed names, notes and reasons, and the private link code.
   // The amounts, lines, wording and content fingerprint stay.
   await store.quote.updateMany({
     where: { customerId: id },
@@ -85,6 +85,7 @@ export async function anonymiseCustomer(
       acceptedUserAgent: null,
       declineReason: null,
       reversalNote: null,
+      linkToken: null,
     },
   });
 
