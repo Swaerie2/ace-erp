@@ -32,5 +32,36 @@ export async function recordAudit(db: Pick<Db, "auditLog">, entry: AuditEntry): 
       ip: entry.ip ?? null,
       userAgent: entry.userAgent ?? null,
     },
+    select: { id: true },
   });
+}
+
+/** Who did something, for the audit log. */
+export type AuditParty = {
+  actorType: AuditActorType;
+  actorId?: string | null;
+  ip?: string | null;
+  userAgent?: string | null;
+};
+
+export function staffParty(actor: {
+  id: string;
+  ip?: string | undefined;
+  userAgent?: string | undefined;
+}): AuditParty {
+  return {
+    actorType: "STAFF",
+    actorId: actor.id,
+    ip: actor.ip ?? null,
+    userAgent: actor.userAgent ?? null,
+  };
+}
+
+/**
+ * A client acting through the private link. Deliberately carries NO address and NO browser string: the
+ * audit log is append-only and is never scrubbed, so a visitor's details must not be written to it.
+ * (They are kept on the acceptance record itself, which is scrubbed when the customer is anonymised.)
+ */
+export function clientParty(customerId: string): AuditParty {
+  return { actorType: "CUSTOMER", actorId: customerId };
 }

@@ -1,3 +1,4 @@
+import { staffParty, type AuditParty } from "../audit";
 import type { Db } from "../db";
 import type { Prisma } from "../generated/prisma/client";
 import { CustomerStatus } from "../generated/prisma/enums";
@@ -8,8 +9,10 @@ import type { ContactInput, CustomerInput, PropertyInput } from "./schemas";
 import {
   changedFields,
   findEditableCustomer,
+  findEditableCustomerNarrow,
   lockCustomer,
   logCustomerEvent,
+  logCustomerEventAs,
   type Store,
 } from "./store";
 import { CREW_CUSTOMER_SELECT } from "./views";
@@ -107,17 +110,15 @@ export async function restoreCustomer(store: Store, actor: Actor, id: string): P
 }
 
 /**
- * Turns a lead (or a paused customer) into an active customer in one step. An active customer is
- * left completely untouched. An archived customer is refused: restore it first, so a former client
- * cannot be switched on by accident. Module 3 will call this when a client accepts a quote.
+ * The activation rule without any role check, for use only after the caller has done its own checks
+ * (a staff role check, or a valid quote acceptance). Reads only the columns it needs.
  */
-export async function activateCustomer(
+export async function activateCustomerInternal(
   store: Pick<Db, "customer" | "auditLog">,
-  actor: Actor,
+  party: AuditParty,
   id: string,
   opts: { via?: "quote" } = {},
 ): Promise<void> {
-  assertRole(actor, MANAGEMENT);
   /** True when there is something to do; throws for an archived customer. */
   const needsActivating = (status: CustomerStatus) => {
     if (status === "ARCHIVED") {
@@ -126,17 +127,32 @@ export async function activateCustomer(
     return status === "LEAD" || status === "PAUSED";
   };
   // Look first WITHOUT locking, so an already active customer is left completely untouched.
-  if (!needsActivating((await findEditableCustomer(store, id)).status)) return;
+  if (!needsActivating((await findEditableCustomerNarrow(store, id)).status)) return;
   // Then lock and decide again from a fresh read: a concurrent change may have landed in between.
   await lockCustomer(store, id);
-  const existing = await findEditableCustomer(store, id);
+  const existing = await findEditableCustomerNarrow(store, id);
   if (!needsActivating(existing.status)) return;
-  await store.customer.update({ where: { id }, data: { status: "ACTIVE" } });
+  await store.customer.update({ where: { id }, data: { status: "ACTIVE" }, select: { id: true } });
   // Only the previous status is recorded (it is not personal data).
-  await logCustomerEvent(store, actor, "customer.activated", id, {
+  await logCustomerEventAs(store, party, "customer.activated", id, {
     from: existing.status,
     ...(opts.via ? { via: opts.via } : {}),
   });
+}
+
+/**
+ * Turns a lead (or a paused customer) into an active customer in one step. An active customer is
+ * left completely untouched. An archived customer is refused: restore it first, so a former client
+ * cannot be switched on by accident. A quote acceptance calls this too (via the internal version).
+ */
+export async function activateCustomer(
+  store: Pick<Db, "customer" | "auditLog">,
+  actor: Actor,
+  id: string,
+  opts: { via?: "quote" } = {},
+): Promise<void> {
+  assertRole(actor, MANAGEMENT);
+  await activateCustomerInternal(store, staffParty(actor), id, opts);
 }
 
 // --- searching ----------------------------------------------------------------------------------
