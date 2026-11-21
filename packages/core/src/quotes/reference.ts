@@ -60,3 +60,15 @@ export function displayStatus(
   if (q.status === "ISSUED" && toDateString(q.validUntil) < today) return "EXPIRED";
   return q.status;
 }
+
+const dateFormat = new Intl.DateTimeFormat("en-ZA", { dateStyle: "medium", timeZone: ZONE });
+const dateTimeFormat = new Intl.DateTimeFormat("en-ZA", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: ZONE,
+});
+
+/** "21 Nov 2026", in South African time. */
+export const formatDateSA = (value: Date): string => dateFormat.format(value);
+/** "21 Nov 2026, 10:07", in South African time. */
+export const formatDateTimeSA = (value: Date): string => dateTimeFormat.format(value);
