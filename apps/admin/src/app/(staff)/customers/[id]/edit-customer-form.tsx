@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useActionState, useRef } from "react";
 import { buttonClass } from "@/components/auth-card";
 import { FormMessage } from "@/components/form";
-import { useFocusOnFeedback } from "@/lib/use-focus-on-feedback";
+import { useFocusOnFeedback } from "@ace/ui/use-focus-on-feedback";
 import { updateCustomerAction } from "../actions";
 import { CustomerFields } from "../_components/customer-fields";
 

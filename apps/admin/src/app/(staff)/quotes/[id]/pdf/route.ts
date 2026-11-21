@@ -4,7 +4,7 @@ import { z } from "zod";
 import { toActor } from "@/lib/actor";
 import { requireStaff } from "@/lib/auth";
 import { loadDocument } from "../document-input";
-import { QuotePdf } from "./quote-pdf";
+import { QuotePdf } from "@ace/ui/quote-pdf";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const staff = await requireStaff(["OWNER", "MANAGER"]); // every route starts with this

@@ -44,7 +44,7 @@ Each module is built, tested and approved before the next begins.
 | 0   | Foundation                   | Project, checks, staff sign-in and roles, audit log, backups, email, error alerts |
 | 1   | Customers                    | Client profiles, properties, contacts, notes, import from a spreadsheet           |
 | 2   | Services catalogue           | The list of services quotes are built from (no prices: each client is quoted)     |
-| 3   | Quotes                       | 3a built (builder, PDF, accept by staff); 3b (client link) next                   |
+| 3   | Quotes                       | 3a built (builder, PDF, accept by staff); 3b (client link) built                  |
 | 4   | Client portal and onboarding | Welcome and registration after acceptance, client sign-in, view quotes            |
 | 5   | Invoices and statements      | EFT invoices with payment reference, mark paid, proof of payment, statements      |
 | 6   | Jobs and scheduling          | Recurring weekly rounds, crew allocation                                          |
@@ -52,9 +52,9 @@ Each module is built, tested and approved before the next begins.
 
 Requirements carried forward to later modules:
 
-- **Module 3b (Quotes): client link.** A private link per quote so the client can accept or
-  decline (see the Quotes section). Extra work asked for later is simply a new quote for the same
-  property.
+- ~~**Module 3b (Quotes): client link.** A private link per quote so the client can accept or
+  decline.~~ Done in Module 3b (see the Quotes sections below). Extra work asked for later is
+  simply a new quote for the same property.
 - **Module 6 (Jobs): crew see the agreed scope** for each property, so included work and extras
   are clear on the day.
 
@@ -237,7 +237,8 @@ These apply to every module. A module is not finished until it follows all of th
   reversed. The privacy guard test covers every quote column, and the customer export includes the
   customer's quotes.
 - **PDF:** generated on the server with the built-in PDF fonts (Helvetica), so no font files are
-  bundled. The route is staff only.
+  bundled. The staff route is staff only; clients get the same PDF (without their email or phone)
+  from the portal at `/q/<token>/pdf`, which is refused for bots and rate limited.
 - **Hand-written SQL:** the check constraints, the RLS and REVOKE statements, the unique index on
   the quote number and the seeded `quote_wording` row in the quotes migration are hand-written SQL
   that Prisma does not know about (same note as services). Any generated migration must be read for
@@ -246,10 +247,11 @@ These apply to every module. A module is not finished until it follows all of th
 
 ### Known limitations and follow-ups
 
-- Quotes have no client link yet (Phase 3b). Until then staff share the PDF themselves.
-- For Phase 3b: `acceptQuote` is staff-bound (role check, staff id, `STAFF` audit actor, and the
-  `activateCustomer` role check). The client link will need a shared internal accept function that
-  takes an actor type, with the staff action and the client action both calling it.
+- ~~Quotes have no client link yet (Phase 3b). Until then staff share the PDF themselves.~~ Done in
+  Module 3b (below).
+- ~~For Phase 3b: `acceptQuote` is staff-bound ... the client link will need a shared internal accept
+  function that takes an actor type.~~ Done in Module 3b: the staff action and the client link both
+  call one shared accept function.
 - The wording row lists (exclusions, terms, every-visit points) are stored as JSON.
 - The customer Activity tab does not list quote events. They appear on the quote itself.
 - `quote_lines.description` is staff text and is assumed to be free of personal details. The
@@ -264,6 +266,57 @@ These apply to every module. A module is not finished until it follows all of th
       description), the "Every visit on record" points (some promises depend on the Jobs module)
       and the business details on a test quote in the live app.
 - [ ] Have the terms read by a legal adviser once.
+
+## Quotes: the private client link (Module 3b)
+
+- **Where the code lives.** `packages/core/src/quotes/public.ts` is the only door the portal uses to
+  reach the database. It has five functions: `getPublicQuote`, `recordLinkView`, `acceptViaLink`,
+  `declineViaLink` and `checkRateLimit`. None takes a staff `Actor`; the client's acts are recorded
+  with actor type `CUSTOMER`. `packages/ui` holds the quote document and the PDF layout, shared by
+  both apps so staff and clients see the same thing. The portal pages are under
+  `apps/portal/src/app/q/[token]`.
+- **The portal's own database login.** The portal connects as the low-privilege role `ace_portal`,
+  created by the migration `20261121120000_client_link` (no login until the owner sets a password).
+  The migration lists exactly what it may read and write: a few columns of quotes, customers and
+  properties, the quote lines and scope rows, insert-only on the audit log, and the rate-limit table.
+  It cannot read contacts, staff, services, the internal note, other customers' details or the audit
+  history. Every database call in the public path names its columns (`select`), so it works with
+  those column-level grants. In production the portal exits at start-up when `PORTAL_DATABASE_URL`
+  is not set (`apps/portal/src/instrumentation.ts`); in development it falls back to `DATABASE_URL`.
+- **The link.** Each issued quote gets a random 256-bit code, shown to staff as a link
+  (`<PORTAL_URL>/q/<code>`) they can copy, revoke or replace. Unknown, revoked and wrong codes all
+  give the same not-found page. Pages are `noindex`, `no-store` and send no referrer. Link previews,
+  crawlers and clients that send no browser string get a bare page, are not counted as a view and
+  get no PDF.
+- **Privacy.** The rate limiter keeps only a SHA-256 hash of the visitor's address. The client's
+  address and browser are stored only on the acceptance record (scrubbed when the customer is
+  anonymised, along with the link code) and never in the audit log. Audit lines hold fixed words
+  and counts only, never the typed name.
+
+### Known limitations and follow-ups
+
+- There is no alert when a client accepts. Staff look at the Quotes list (status Accepted) and the
+  "last viewed" time on the quote.
+- A forwarded link works for whoever holds it. The typed name and the recorded address show who
+  accepted.
+- Over the rate limit, the page shows a "Too many requests" notice (HTTP 200, because a Next.js page
+  cannot set its own status), while the PDF route returns a real HTTP 429.
+- The client's address is taken from the first `x-forwarded-for` entry. That is only trustworthy on
+  a host that overwrites the header (Vercel does). Check this when choosing the live host.
+- ~~The customer data export includes the live link code.~~ Done: `exportCustomerData` leaves
+  `linkToken` out of the quote rows it returns.
+- The portal has no automated browser tests. The real-browser check is done by hand, as listed in
+  the Module 3b spec.
+
+### Before real customer data goes in
+
+- [ ] Give the portal its own database login: in the live database run
+      `ALTER ROLE ace_portal WITH LOGIN PASSWORD '<a new long random password>'` (type it yourself,
+      never in chat or git), then set `PORTAL_DATABASE_URL` for the portal app to that role's pooled
+      connection string. The portal will not start in production without it.
+- [ ] Set `PORTAL_URL` for the staff app to the portal's public address. The staff app builds the
+      client link from it, and in production it refuses to build one without it.
+- [ ] Confirm the live host overwrites `x-forwarded-for` (see the limitation above).
 
 ## Working agreement
 

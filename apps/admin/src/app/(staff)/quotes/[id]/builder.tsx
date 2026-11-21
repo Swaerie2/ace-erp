@@ -14,7 +14,7 @@ import {
   type BuilderState,
 } from "./builder-types";
 import { DetailsStep, LinesStep, ScopeStep, TotalsSummary } from "./builder-parts";
-import { QuoteDocumentView } from "./quote-document";
+import { QuoteDocumentView } from "@ace/ui/quote-document";
 
 const STEPS = ["Scope", "Prices", "Details", "Review"] as const;
 

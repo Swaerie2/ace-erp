@@ -113,6 +113,11 @@ const QUOTE: Record<string, Rule> = {
   reversalNote: "scrubbed",
   agreementEndedAt: "kept: timestamp",
   agreementReplacedById: "kept: identifier",
+  linkToken: "scrubbed",
+  linkCreatedAt: "kept: timestamp",
+  firstViewedAt: "kept: timestamp",
+  lastViewedAt: "kept: timestamp",
+  declinedByClient: "kept: yes/no, who declined",
 };
 
 const QUOTE_SCOPE_ITEM: Record<string, Rule> = {

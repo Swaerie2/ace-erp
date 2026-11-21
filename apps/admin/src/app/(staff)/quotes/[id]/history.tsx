@@ -14,6 +14,8 @@ const LABELS: Record<string, string> = {
   "quote.reversed": "Acceptance reversed",
   "quote.replaced": "Replaced by a newer version",
   "quote.agreement_ended": "Agreement replaced by a newer quote",
+  "quote.link_created": "Client link created",
+  "quote.link_revoked": "Client link revoked",
 };
 
 /** Only fixed words from the audit entry are shown, never anything typed by a person. */

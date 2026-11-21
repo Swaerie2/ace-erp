@@ -1,0 +1,22 @@
+{
+  "name": "@ace/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./quote-document": "./src/quote-document.tsx",
+    "./quote-pdf": "./src/quote-pdf.tsx",
+    "./use-focus-on-feedback": "./src/use-focus-on-feedback.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ace/core": "*",
+    "@react-pdf/renderer": "^4.9.0",
+    "react": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0"
+  }
+}

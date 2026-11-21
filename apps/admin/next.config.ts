@@ -10,7 +10,7 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@ace/core"],
+  transpilePackages: ["@ace/core", "@ace/ui"],
   serverExternalPackages: ["@react-pdf/renderer"],
   poweredByHeader: false,
   experimental: {

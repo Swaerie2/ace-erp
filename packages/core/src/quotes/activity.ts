@@ -7,9 +7,17 @@ export async function listQuoteActivity(store: QuoteStore, actor: Actor, id: str
     where: { entityType: "quote", entityId: id },
     orderBy: { at: "desc" },
     take: limit,
-    select: { id: true, at: true, action: true, actorId: true, after: true },
+    select: { id: true, at: true, action: true, actorType: true, actorId: true, after: true },
   });
-  const ids = [...new Set(entries.map((e) => e.actorId).filter((v): v is string => Boolean(v)))];
+  // Only staff ids are looked up; a client acceptance carries the customer id, which is not staff.
+  const ids = [
+    ...new Set(
+      entries
+        .filter((e) => e.actorType === "STAFF")
+        .map((e) => e.actorId)
+        .filter((v): v is string => Boolean(v)),
+    ),
+  ];
   const staff = await store.staffUser.findMany({
     where: { id: { in: ids } },
     select: { id: true, name: true },
@@ -17,6 +25,11 @@ export async function listQuoteActivity(store: QuoteStore, actor: Actor, id: str
   const names = new Map(staff.map((s) => [s.id, s.name]));
   return entries.map((e) => ({
     ...e,
-    actorName: e.actorId ? (names.get(e.actorId) ?? "Staff") : "System",
+    actorName:
+      e.actorType === "CUSTOMER"
+        ? "Client (private link)"
+        : e.actorId
+          ? (names.get(e.actorId) ?? "Staff")
+          : "System",
   }));
 }

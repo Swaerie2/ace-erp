@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Classes used by the shared UI package must be generated too. */
+@source "../../../../packages/ui/src";
+
 /* ACE brand colours, the same ones used on the public website. */
 @theme inline {
   --color-forest: #22422e;

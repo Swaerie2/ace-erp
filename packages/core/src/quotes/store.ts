@@ -1,4 +1,4 @@
-import { recordAudit } from "../audit";
+import { recordAudit, staffParty, type AuditParty } from "../audit";
 import { DomainError, type Actor } from "../customers/access";
 import type { Db } from "../db";
 import type { Prisma } from "../generated/prisma/client";
@@ -44,7 +44,7 @@ export async function findQuote(store: QuoteStore, id: string) {
  * Locks the quote row until the transaction ends, by touching it, so two people changing the same
  * quote take turns. Call it only when something is really about to be written.
  */
-export async function lockQuote(store: QuoteStore, id: string): Promise<void> {
+export async function lockQuote(store: Pick<Db, "quote">, id: string): Promise<void> {
   const { count } = await store.quote.updateMany({
     where: { id },
     data: { updatedAt: new Date() },
@@ -71,6 +71,26 @@ export async function requireQuotable(store: QuoteStore, customerId: string, pro
   return { customer, property };
 }
 
+/** Writes an audit line about a quote for any acting party. `after` holds field names, ids and fixed words only. */
+export async function logQuoteEventAs(
+  store: Pick<QuoteStore, "auditLog">,
+  party: AuditParty,
+  action: string,
+  quoteId: string,
+  after?: Prisma.InputJsonValue,
+): Promise<void> {
+  await recordAudit(store, {
+    actorType: party.actorType,
+    ...(party.actorId ? { actorId: party.actorId } : {}),
+    action,
+    entityType: "quote",
+    entityId: quoteId,
+    ...(after !== undefined ? { after } : {}),
+    ...(party.ip ? { ip: party.ip } : {}),
+    ...(party.userAgent ? { userAgent: party.userAgent } : {}),
+  });
+}
+
 /** Writes an audit line about a quote. `after` holds field names, ids and fixed words only. */
 export async function logQuoteEvent(
   store: QuoteStore,
@@ -79,14 +99,5 @@ export async function logQuoteEvent(
   quoteId: string,
   after?: Prisma.InputJsonValue,
 ): Promise<void> {
-  await recordAudit(store, {
-    actorType: "STAFF",
-    actorId: actor.id,
-    action,
-    entityType: "quote",
-    entityId: quoteId,
-    ...(after !== undefined ? { after } : {}),
-    ...(actor.ip ? { ip: actor.ip } : {}),
-    ...(actor.userAgent ? { userAgent: actor.userAgent } : {}),
-  });
+  await logQuoteEventAs(store, staffParty(actor), action, quoteId, after);
 }

@@ -1,4 +1,4 @@
-import { recordAudit } from "../audit";
+import { recordAudit, staffParty, type AuditParty } from "../audit";
 import { getDb, type Db } from "../db";
 import type { Prisma } from "../generated/prisma/client";
 import { DomainError, type Actor } from "./access";
@@ -20,6 +20,26 @@ export function inTx<T>(
   });
 }
 
+/** Writes an audit line about a customer for any acting party. `after` holds field NAMES and ids only. */
+export async function logCustomerEventAs(
+  store: Pick<Db, "auditLog">,
+  party: AuditParty,
+  action: string,
+  customerId: string,
+  after?: Prisma.InputJsonValue,
+): Promise<void> {
+  await recordAudit(store, {
+    actorType: party.actorType,
+    ...(party.actorId ? { actorId: party.actorId } : {}),
+    action,
+    entityType: "customer",
+    entityId: customerId,
+    ...(after !== undefined ? { after } : {}),
+    ...(party.ip ? { ip: party.ip } : {}),
+    ...(party.userAgent ? { userAgent: party.userAgent } : {}),
+  });
+}
+
 /** Writes an audit line about a customer. `after` must hold field NAMES and ids, never personal values. */
 export async function logCustomerEvent(
   store: Pick<Db, "auditLog">,
@@ -28,16 +48,7 @@ export async function logCustomerEvent(
   customerId: string,
   after?: Prisma.InputJsonValue,
 ): Promise<void> {
-  await recordAudit(store, {
-    actorType: "STAFF",
-    actorId: actor.id,
-    action,
-    entityType: "customer",
-    entityId: customerId,
-    ...(after !== undefined ? { after } : {}),
-    ...(actor.ip ? { ip: actor.ip } : {}),
-    ...(actor.userAgent ? { userAgent: actor.userAgent } : {}),
-  });
+  await logCustomerEventAs(store, staffParty(actor), action, customerId, after);
 }
 
 /** Names of the fields whose value differs. Used for audit lines (names only, never values). */
@@ -56,6 +67,22 @@ export function changedFields(
  */
 export async function findEditableCustomer(store: Pick<Db, "customer">, customerId: string) {
   const customer = await store.customer.findUnique({ where: { id: customerId } });
+  if (!customer) throw new DomainError("That customer could not be found.");
+  if (customer.anonymisedAt) {
+    throw new DomainError("This customer has been anonymised and cannot be changed.");
+  }
+  return customer;
+}
+
+/**
+ * Like `findEditableCustomer` but reads only id, status and anonymisedAt, so it works for the client
+ * portal's column-limited database role. Takes no lock.
+ */
+export async function findEditableCustomerNarrow(store: Pick<Db, "customer">, customerId: string) {
+  const customer = await store.customer.findUnique({
+    where: { id: customerId },
+    select: { id: true, status: true, anonymisedAt: true },
+  });
   if (!customer) throw new DomainError("That customer could not be found.");
   if (customer.anonymisedAt) {
     throw new DomainError("This customer has been anonymised and cannot be changed.");

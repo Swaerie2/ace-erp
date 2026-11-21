@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   addDays,
   displayStatus,
+  formatDateSA,
+  formatDateTimeSA,
   formatQuoteReference,
   fromDateString,
   isValidDateString,
@@ -66,5 +68,13 @@ describe("displayStatus", () => {
     for (const status of ["DRAFT", "ACCEPTED", "DECLINED", "REPLACED", "WITHDRAWN"] as const) {
       expect(displayStatus({ status, validUntil }, "2027-06-01")).toBe(status);
     }
+  });
+});
+
+describe("South African date text", () => {
+  it("formats dates and times in South African time", () => {
+    const d = new Date("2026-11-21T08:07:00Z"); // 10:07 in South Africa
+    expect(formatDateSA(d)).toBe("21 Nov 2026");
+    expect(formatDateTimeSA(d)).toBe("21 Nov 2026, 10:07");
   });
 });

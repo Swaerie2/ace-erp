@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@ace/core": "*",
+    "@ace/ui": "*",
     "@react-pdf/renderer": "^4.9.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.119.1",

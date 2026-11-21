@@ -1,4 +1,5 @@
 export { getDb } from "./db";
+export * from "./portal-db";
 export type { Db } from "./db";
 export { getDatabaseUrl, requireEnv } from "./env";
 export { recordAudit } from "./audit";

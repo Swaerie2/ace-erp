@@ -3,7 +3,7 @@
 import { useActionState, useRef } from "react";
 import { buttonClass, inputClass } from "@/components/auth-card";
 import { FormMessage, secondaryButtonClass } from "@/components/form";
-import { useFocusOnFeedback } from "@/lib/use-focus-on-feedback";
+import { useFocusOnFeedback } from "@ace/ui/use-focus-on-feedback";
 import { commitImportAction, previewImportAction, type ImportState } from "./actions";
 
 type Preview = NonNullable<NonNullable<ImportState>["preview"]>;

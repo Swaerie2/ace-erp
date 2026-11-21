@@ -20,6 +20,11 @@ describe.skipIf(!dbTestsEnabled)("quotes and the privacy tools", () => {
       const exported = await exportCustomerData(tx, owner, q.customerId);
       expect(exported.customer.quotes.map((x) => x.id)).toEqual([q.id]);
       expect(exported.customer.quotes[0]?.lines).toHaveLength(1);
+      // The live client link code is a credential, not something held about the customer.
+      const code = (await findQuote(tx, q.id)).linkToken ?? "";
+      expect(code).not.toBe("");
+      expect(exported.customer.quotes[0]).not.toHaveProperty("linkToken");
+      expect(JSON.stringify(exported)).not.toContain(code);
     });
   });
 
@@ -53,6 +58,7 @@ describe.skipIf(!dbTestsEnabled)("quotes and the privacy tools", () => {
       const before = await findQuote(tx, accepted.id);
       expect(before.recipientName).toBeTruthy();
       expect(before.internalNote).toBe("Gate code 9999");
+      expect(before.linkToken).not.toBeNull();
 
       await anonymiseCustomer(
         tx,
@@ -75,6 +81,7 @@ describe.skipIf(!dbTestsEnabled)("quotes and the privacy tools", () => {
         "acceptedUserAgent",
         "declineReason",
         "reversalNote",
+        "linkToken",
       ] as const) {
         expect(after[column], column).toBeNull();
       }

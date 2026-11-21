@@ -6,6 +6,7 @@ import {
   contactSchema,
   createCustomer,
   createQuote,
+  createQuoteLink,
   customerSchema,
   declineQuote,
   declineSchema,
@@ -20,6 +21,7 @@ import {
   propertySchema,
   reverseAcceptance,
   reviseQuote,
+  revokeQuoteLink,
   saveDraft,
   SENT_METHODS,
   withdrawQuote,
@@ -289,4 +291,35 @@ export async function reverseAcceptanceAction(
     return failure(error, values);
   }
   redirect(`/quotes/${id.data}`);
+}
+
+/** Makes the client link for an issued, accepted or declined quote. With "replace" the old link stops working. */
+export async function createLinkAction(formData: FormData): Promise<void> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const parsed = idSchema.safeParse(formData.get("id"));
+  if (!parsed.success) redirect("/quotes");
+  const id = parsed.data;
+  const replace = formData.get("replace") === "yes";
+  try {
+    await inTx((tx) => createQuoteLink(tx, actor, id, { replace }));
+  } catch (error) {
+    backWithNotice(error, id);
+  }
+  redirect(`/quotes/${id}`);
+}
+
+/** Stops the client link working straight away. */
+export async function revokeLinkAction(formData: FormData): Promise<void> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const parsed = idSchema.safeParse(formData.get("id"));
+  if (!parsed.success) redirect("/quotes");
+  const id = parsed.data;
+  try {
+    await inTx((tx) => revokeQuoteLink(tx, actor, id));
+  } catch (error) {
+    backWithNotice(error, id);
+  }
+  redirect(`/quotes/${id}`);
 }
