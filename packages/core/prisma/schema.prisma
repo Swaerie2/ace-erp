@@ -1,7 +1,7 @@
 // ACE Garden Services: core database schema.
 //
 // Modules 0 to 3: organisation settings, staff users, audit log, customers, contacts, properties,
-// services, quotes. Invoices arrive in Module 5, and so on.
+// services, quotes, client link. Invoices arrive in Module 5, and so on.
 //
 // Rules for every future model:
 //   * Money is stored as whole cents (Int), never floats.
@@ -346,6 +346,13 @@ model Quote {
   /// Set when a later accepted monthly quote replaced this one as the property's agreement.
   agreementEndedAt      DateTime?
   agreementReplacedById String?            @db.Uuid
+  /// The private client link code (base64url, 43 chars). Null = no link. A secret: scrubbed on anonymise.
+  linkToken             String?            @unique
+  linkCreatedAt         DateTime?
+  firstViewedAt         DateTime?
+  lastViewedAt          DateTime?
+  /// True when the decline came from the client link rather than from staff.
+  declinedByClient      Boolean            @default(false)
 
   customer   Customer         @relation(fields: [customerId], references: [id])
   property   Property         @relation(fields: [propertyId], references: [id])
@@ -409,4 +416,15 @@ model QuoteCounter {
   lastSeq Int
 
   @@map("quote_counters")
+}
+
+/// Rate limiting for the public client link. One row per (bucket, 10-minute window). The bucket holds a
+/// HASHED visitor address, never the address itself.
+model PublicLinkHit {
+  bucket      String
+  windowStart DateTime
+  count       Int
+
+  @@id([bucket, windowStart])
+  @@map("public_link_hits")
 }
