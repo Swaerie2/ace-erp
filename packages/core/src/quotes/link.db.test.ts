@@ -18,6 +18,7 @@ describe.skipIf(!dbTestsEnabled)("the private client link", () => {
       expect(isLinkTokenShape(row.linkToken ?? "")).toBe(true);
       expect(row.linkCreatedAt).toBeInstanceOf(Date);
       expect(row.firstViewedAt).toBeNull();
+      expect(row.lastViewedAt).toBeNull();
     });
   });
 
@@ -60,12 +61,15 @@ describe.skipIf(!dbTestsEnabled)("the private client link", () => {
   it("never writes the code into the audit log", async () => {
     await withRollback(async (tx) => {
       const q = await makeIssued(tx);
+      const atIssue = (await findQuote(tx, q.id)).linkToken ?? "";
+      expect(isLinkTokenShape(atIssue)).toBe(true);
       const { token } = await createQuoteLink(tx, manager, q.id, { replace: true });
       await revokeQuoteLink(tx, manager, q.id);
       const audit = await tx.auditLog.findMany({ where: { entityId: q.id } });
       expect(audit.map((a) => a.action)).toEqual(
         expect.arrayContaining(["quote.link_created", "quote.link_revoked"]),
       );
+      expect(JSON.stringify(audit)).not.toContain(atIssue);
       expect(JSON.stringify(audit)).not.toContain(token);
     });
   });
@@ -79,7 +83,11 @@ describe.skipIf(!dbTestsEnabled)("the private client link", () => {
       );
       const withdrawn = await makeIssued(tx);
       await withdrawQuote(tx, manager, withdrawn.id);
-      await expect(createQuoteLink(tx, manager, withdrawn.id)).rejects.toBeInstanceOf(DomainError);
+      const refusal = createQuoteLink(tx, manager, withdrawn.id);
+      await expect(refusal).rejects.toBeInstanceOf(DomainError);
+      await expect(refusal).rejects.toThrow(
+        "A link can only be made for an issued, accepted or declined quote.",
+      );
     });
   });
 
@@ -88,8 +96,16 @@ describe.skipIf(!dbTestsEnabled)("the private client link", () => {
       const original = await makeIssued(tx);
       const { id: revision } = await reviseQuote(tx, manager, original.id);
       await issueQuote(tx, manager, revision);
-      expect((await findQuote(tx, original.id)).status).toBe("REPLACED");
-      await expect(createQuoteLink(tx, manager, original.id)).rejects.toBeInstanceOf(DomainError);
+      const replaced = await findQuote(tx, original.id);
+      expect(replaced.status).toBe("REPLACED");
+      const refusal = createQuoteLink(tx, manager, original.id);
+      await expect(refusal).rejects.toBeInstanceOf(DomainError);
+      await expect(refusal).rejects.toThrow(
+        "A link can only be made for an issued, accepted or declined quote.",
+      );
+      const issuedRevision = await findQuote(tx, revision);
+      expect(isLinkTokenShape(issuedRevision.linkToken ?? "")).toBe(true);
+      expect(issuedRevision.linkToken).not.toBe(replaced.linkToken);
     });
   });
 

@@ -1,5 +1,5 @@
 import { assertRole, DomainError, MANAGEMENT, type Actor } from "../customers/access";
-import { findEditableCustomer } from "../customers/store";
+import { findEditableCustomer, lockCustomer } from "../customers/store";
 import { findQuote, lockQuote, logQuoteEvent, type QuoteStore } from "./store";
 import { generateLinkToken } from "./token";
 
@@ -19,7 +19,9 @@ export async function createQuoteLink(
   assertRole(actor, MANAGEMENT);
   const first = await findQuote(store, id);
   if (!LINKABLE.includes(first.status)) throw new DomainError(NOT_LINKABLE);
+  // Lock order: customer, then quote, so a concurrent anonymise cannot slip in between.
   await findEditableCustomer(store, first.customerId);
+  await lockCustomer(store, first.customerId);
   await lockQuote(store, id);
   const quote = await findQuote(store, id);
   if (!LINKABLE.includes(quote.status)) throw new DomainError(NOT_LINKABLE);
