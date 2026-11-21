@@ -10,7 +10,7 @@ import {
 } from "./public";
 import { addDays, todaySA } from "./reference";
 import { findQuote } from "./store";
-import { makeIssued } from "./test-helpers";
+import { makeIssued, monthlyLine, optionalLine } from "./test-helpers";
 
 type Tx = Parameters<Parameters<typeof withRollback>[0]>[0];
 const AS_PORTAL = `SET LOCAL ROLE "ace_portal"`;
@@ -26,7 +26,116 @@ const column = (table: string, col: string, priv: "SELECT" | "UPDATE" | "INSERT"
 const tablePriv = (table: string, priv: string) =>
   `has_table_privilege('ace_portal', '${table}', '${priv}')`;
 
+/**
+ * Every privilege the role holds directly, read from the catalogue, as sorted text such as
+ * `public.quotes.validUntil:UPDATE` (a column grant), `public.quote_lines:SELECT` (a table grant) or
+ * `schema public:USAGE`. Covers all schemas and every kind of relation (tables, views, sequences),
+ * schemas and functions, so a grant widened anywhere shows up.
+ */
+async function grantsOfPortal(tx: Tx): Promise<string[]> {
+  const rows = await tx.$queryRawUnsafe<{ p: string }[]>(`
+    select n.nspname || '.' || c.relname || ':' || a.privilege_type as p
+      from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+      cross join lateral aclexplode(c.relacl) a
+     where a.grantee = 'ace_portal'::regrole::oid
+    union all
+    select n.nspname || '.' || c.relname || '.' || att.attname || ':' || a.privilege_type
+      from pg_attribute att
+      join pg_class c on c.oid = att.attrelid
+      join pg_namespace n on n.oid = c.relnamespace
+      cross join lateral aclexplode(att.attacl) a
+     where a.grantee = 'ace_portal'::regrole::oid
+    union all
+    select 'schema ' || n.nspname || ':' || a.privilege_type
+      from pg_namespace n
+      cross join lateral aclexplode(n.nspacl) a
+     where a.grantee = 'ace_portal'::regrole::oid
+    union all
+    select 'function ' || n.nspname || '.' || f.proname || ':' || a.privilege_type
+      from pg_proc f
+      join pg_namespace n on n.oid = f.pronamespace
+      cross join lateral aclexplode(f.proacl) a
+     where a.grantee = 'ace_portal'::regrole::oid
+  `);
+  return rows.map((r) => r.p).sort();
+}
+
+// Checked by eye against migrations/20261121120000_client_link/migration.sql: exactly what it grants, no more.
+const EXPECTED_PORTAL_GRANTS: string[] = [
+  "public.audit_log.id:SELECT",
+  "public.audit_log:INSERT",
+  "public.customers.anonymisedAt:SELECT",
+  "public.customers.id:SELECT",
+  "public.customers.status:SELECT",
+  "public.customers.status:UPDATE",
+  "public.customers.updatedAt:UPDATE",
+  "public.properties.archivedAt:SELECT",
+  "public.properties.customerId:SELECT",
+  "public.properties.id:SELECT",
+  "public.properties.updatedAt:UPDATE",
+  "public.public_link_hits:DELETE",
+  "public.public_link_hits:INSERT",
+  "public.public_link_hits:SELECT",
+  "public.public_link_hits:UPDATE",
+  "public.quote_lines.chosen:UPDATE",
+  "public.quote_lines:SELECT",
+  "public.quote_scope_items:SELECT",
+  "public.quotes.acceptanceNote:UPDATE",
+  "public.quotes.acceptedAt:SELECT",
+  "public.quotes.acceptedAt:UPDATE",
+  "public.quotes.acceptedByName:SELECT",
+  "public.quotes.acceptedByName:UPDATE",
+  "public.quotes.acceptedByStaffId:UPDATE",
+  "public.quotes.acceptedIp:UPDATE",
+  "public.quotes.acceptedMethod:SELECT",
+  "public.quotes.acceptedMethod:UPDATE",
+  "public.quotes.acceptedStartDate:SELECT",
+  "public.quotes.acceptedStartDate:UPDATE",
+  "public.quotes.acceptedUserAgent:UPDATE",
+  "public.quotes.agreementEndedAt:SELECT",
+  "public.quotes.agreementEndedAt:UPDATE",
+  "public.quotes.agreementReplacedById:SELECT",
+  "public.quotes.agreementReplacedById:UPDATE",
+  "public.quotes.contentHash:SELECT",
+  "public.quotes.customerId:SELECT",
+  "public.quotes.declineReason:SELECT",
+  "public.quotes.declineReason:UPDATE",
+  "public.quotes.declinedAt:SELECT",
+  "public.quotes.declinedAt:UPDATE",
+  "public.quotes.declinedByClient:SELECT",
+  "public.quotes.declinedByClient:UPDATE",
+  "public.quotes.firstViewedAt:SELECT",
+  "public.quotes.firstViewedAt:UPDATE",
+  "public.quotes.id:SELECT",
+  "public.quotes.issuedAt:SELECT",
+  "public.quotes.lastViewedAt:SELECT",
+  "public.quotes.lastViewedAt:UPDATE",
+  "public.quotes.linkToken:SELECT",
+  "public.quotes.numberSeq:SELECT",
+  "public.quotes.numberYear:SELECT",
+  "public.quotes.propertyId:SELECT",
+  "public.quotes.recipientName:SELECT",
+  "public.quotes.revision:SELECT",
+  "public.quotes.revisionOfId:SELECT",
+  "public.quotes.siteAddress:SELECT",
+  "public.quotes.siteLabel:SELECT",
+  "public.quotes.status:SELECT",
+  "public.quotes.status:UPDATE",
+  "public.quotes.updatedAt:UPDATE",
+  "public.quotes.validUntil:SELECT",
+  "public.quotes.withdrawnAt:SELECT",
+  "public.quotes.wordingSnapshot:SELECT",
+  "schema public:USAGE",
+];
+
 describe.skipIf(!dbTestsEnabled)("the ace_portal role: exact privileges", () => {
+  it("holds exactly the privileges the client link migration grants, and nothing else", async () => {
+    await withRollback(async (tx) => {
+      expect(await grantsOfPortal(tx)).toEqual(EXPECTED_PORTAL_GRANTS);
+    });
+  });
+
   it("is a role that cannot log in", async () => {
     await withRollback(async (tx) => {
       const rows = await tx.$queryRaw<
@@ -225,7 +334,9 @@ describe.skipIf(!dbTestsEnabled)("the ace_portal role: refused statements", () =
           await tx.$executeRawUnsafe(AS_PORTAL);
           await tx.$queryRawUnsafe(sql);
         }),
-      ).rejects.toThrow(/permission denied|violates row-level security/i);
+      ).rejects.toThrow(
+        /permission denied for (table|column|relation)|violates row-level security/i,
+      );
     });
   }
 });
@@ -233,9 +344,14 @@ describe.skipIf(!dbTestsEnabled)("the ace_portal role: refused statements", () =
 describe.skipIf(!dbTestsEnabled)("the public functions run as ace_portal", () => {
   it("shows a quote, records a view, accepts, and keeps the audit and the rate limiter working", async () => {
     await withRollback(async (tx) => {
-      const q = await makeIssued(tx, { status: "LEAD" });
+      const q = await makeIssued(tx, {
+        status: "LEAD",
+        draft: { lines: [monthlyLine(), optionalLine()] },
+      });
       const row = await findQuote(tx, q.id);
       const token = row.linkToken ?? "";
+      const optionId = row.lines[1]?.id ?? "";
+      expect(optionId).toBeTruthy();
 
       await tx.$executeRawUnsafe(AS_PORTAL);
       const view = await getPublicQuote(tx, token);
@@ -245,15 +361,22 @@ describe.skipIf(!dbTestsEnabled)("the public functions run as ace_portal", () =>
       const result = await acceptViaLink(
         tx,
         token,
-        { acceptedBy: "A. Client", startDate: start(), chosenLineIds: [] },
+        { acceptedBy: "A. Client", startDate: start(), chosenLineIds: [optionId] },
         ctx,
       );
       expect(result).toEqual({ outcome: "ACCEPTED", customerFlag: null });
+      // The accepted-state read (who accepted, the start date, the chosen add-on) also works as the role.
+      const accepted = await getPublicQuote(tx, token);
+      expect(accepted.found && accepted.state).toBe("ACCEPTED");
+      expect(accepted.found && accepted.acceptance?.name).toBe("A. Client");
+      expect(accepted.found && accepted.acceptance?.startDate).toBeTruthy();
+      expect(accepted.found && accepted.acceptance?.chosen).toHaveLength(1);
       await tx.$executeRawUnsafe(`RESET ROLE`);
 
       const after = await findQuote(tx, q.id);
       expect(after).toMatchObject({ status: "ACCEPTED", acceptedMethod: "CLIENT_LINK" });
       expect(after.firstViewedAt).toBeInstanceOf(Date);
+      expect(after.lines.map((l) => l.chosen)).toEqual([false, true]);
       expect((await tx.customer.findUniqueOrThrow({ where: { id: q.customerId } })).status).toBe(
         "ACTIVE",
       );

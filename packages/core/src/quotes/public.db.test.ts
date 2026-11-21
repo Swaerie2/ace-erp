@@ -31,7 +31,7 @@ const start = () => addDays(todaySA(), 4);
 const yesterday = () => fromDateString(addDays(todaySA(), -1));
 const tokenOf = async (tx: Tx, id: string) => (await findQuote(tx, id)).linkToken ?? "";
 
-// Each makeIssued() takes about 10 seconds on the dev database and a test has 60 seconds, so no test
+// Each makeIssued() takes about 10 seconds on the dev database and a test has 150 seconds, so no test
 // below issues more than three quotes.
 
 describe.skipIf(!dbTestsEnabled)("looking a quote up by its private code", () => {
@@ -66,6 +66,17 @@ describe.skipIf(!dbTestsEnabled)("looking a quote up by its private code", () =>
         getPublicQuote(tx, ""),
       ]);
       for (const r of results) expect(r).toEqual({ found: false });
+
+      // The revoked code also refuses to accept or decline, and a view of it records nothing.
+      const input = { acceptedBy: "A", startDate: start(), chosenLineIds: [] };
+      expect(await acceptViaLink(tx, token, input, ctx)).toEqual({ outcome: "NOT_FOUND" });
+      expect(await declineViaLink(tx, token, {}, ctx)).toEqual({ outcome: "NOT_FOUND" });
+      await recordLinkView(tx, token);
+      expect(await findQuote(tx, q.id)).toMatchObject({
+        status: "ISSUED",
+        firstViewedAt: null,
+        lastViewedAt: null,
+      });
     });
   });
 

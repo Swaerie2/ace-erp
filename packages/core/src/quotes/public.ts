@@ -327,6 +327,10 @@ export async function declineViaLink(
  * Counts one request for this visitor (already hashed) in the current 10-minute window, with one atomic
  * statement, and says whether it is still within the limit. About one call in a hundred also deletes
  * windows older than a day (`opts.cleanup` forces or prevents this, for tests).
+ *
+ * Call it in its own statement or transaction BEFORE the action transaction (accept or decline). If it
+ * ran inside the action transaction, a refused attempt (an error that rolls the transaction back) would
+ * roll back its own increment too, so failed attempts would never count towards the limit.
  */
 export async function checkRateLimit(
   store: PublicStore,

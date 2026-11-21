@@ -21,7 +21,7 @@ export async function withRollback<T>(
         result = await fn(tx);
         throw new Rollback();
       },
-      { timeout: 60_000, maxWait: 15_000 },
+      { timeout: 150_000, maxWait: 15_000 },
     );
   } catch (error) {
     if (!(error instanceof Rollback)) throw error;
