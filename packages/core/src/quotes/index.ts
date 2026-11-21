@@ -15,5 +15,6 @@ export * from "./schemas";
 export * from "./store";
 export * from "./token";
 export * from "./totals";
+export * from "./visitor";
 export * from "./wording";
 export * from "./wording-schema";
