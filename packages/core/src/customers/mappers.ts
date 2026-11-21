@@ -49,7 +49,5 @@ export function propertyData(p: PropertyInput) {
     terrainNotes: p.terrainNotes ?? null,
     frequency: p.frequency ?? null,
     preferredDay: p.preferredDay ?? null,
-    agreedMonthlyFeeCents: p.monthlyFee ?? null,
-    extrasNote: p.extrasNote ?? null,
   };
 }

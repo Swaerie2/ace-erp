@@ -11,6 +11,7 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   transpilePackages: ["@ace/core"],
+  serverExternalPackages: ["@react-pdf/renderer"],
   poweredByHeader: false,
   experimental: {
     // The customer import accepts files up to 2 MB (plus form overhead).

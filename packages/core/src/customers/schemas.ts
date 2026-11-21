@@ -83,20 +83,6 @@ export function formatCentsForInput(cents: number): string {
   return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, "0")}`;
 }
 
-const rand = z
-  .string()
-  .trim()
-  .transform((v, ctx) => {
-    if (v === "") return undefined;
-    const cents = parseRandToCents(v);
-    if (cents === null) {
-      ctx.addIssue({ code: "custom", message: "Enter an amount in rand, e.g. 850 or 850.50." });
-      return z.NEVER;
-    }
-    return cents;
-  })
-  .optional();
-
 const webLink = z
   .string()
   .trim()
@@ -162,8 +148,5 @@ export const propertySchema = z.object({
   terrainNotes: text(1000),
   frequency: optionalEnum(SERVICE_FREQUENCIES),
   preferredDay: optionalEnum(WEEKDAYS),
-  /** Typed in rand ("R 850"); the validated value is whole CENTS. */
-  monthlyFee: rand,
-  extrasNote: text(500),
 });
 export type PropertyInput = z.output<typeof propertySchema>;

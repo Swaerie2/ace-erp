@@ -9,7 +9,7 @@ export const SERVICE_KIND_LABELS: Record<ServiceKindValue, string> = {
 };
 
 export const SERVICE_NAME_MAX = 80;
-export const SERVICE_DESCRIPTION_MAX = 300;
+export const SERVICE_DESCRIPTION_MAX = 800;
 
 const tooLong = (max: number) => `Keep this under ${max} characters.`;
 

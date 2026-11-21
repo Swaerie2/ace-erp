@@ -26,14 +26,12 @@ export const IMPORT_COLUMNS = [
   "property_suburb",
   "property_city",
   "frequency",
-  "monthly_fee_rand",
-  "extras",
   "source",
   "notes",
 ] as const;
 
 /** Handed out as a download. The example row is made up. */
-export const IMPORT_TEMPLATE = `${IMPORT_COLUMNS.join(",")}\nperson,Sample Customer,,Sample Contact,sample@example.com,082 123 4567,1 Example Road,Exampleville,Boksburg,1459,1 Example Road,Exampleville,Boksburg,weekly,850,weed treatment,referral,Imported sample\n`;
+export const IMPORT_TEMPLATE = `${IMPORT_COLUMNS.join(",")}\nperson,Sample Customer,,Sample Contact,sample@example.com,082 123 4567,1 Example Road,Exampleville,Boksburg,1459,1 Example Road,Exampleville,Boksburg,weekly,referral,Imported sample\n`;
 
 export type RawImportRow = Record<string, string>;
 
@@ -164,8 +162,6 @@ const PROPERTY_COLUMNS: Record<string, string> = {
   suburb: "property_suburb",
   city: "property_city",
   frequency: "frequency",
-  monthlyFee: "monthly_fee_rand",
-  extrasNote: "extras",
 };
 
 function issues(
@@ -231,13 +227,11 @@ export function mapImportRow(
         suburb: get("property_suburb"),
         city: get("property_city"),
         frequency: frequency ?? "",
-        monthlyFee: get("monthly_fee_rand"),
-        extrasNote: get("extras"),
       })
     : null;
 
-  if (!wantsProperty && (freqText || get("monthly_fee_rand") || get("extras"))) {
-    errors.push("property_address: needed when frequency, monthly_fee_rand or extras is given.");
+  if (!wantsProperty && freqText) {
+    errors.push("property_address: needed when frequency is given.");
   }
   if (!customer.success) errors.push(...issues(CUSTOMER_COLUMNS, "display_name", customer.error));
   if (!contact.success) errors.push(...issues(CONTACT_COLUMNS, "email", contact.error));

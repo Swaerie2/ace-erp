@@ -53,7 +53,8 @@ export function ServiceForm({ service }: { service?: ServiceRow }) {
           required
           defaultValue={values.description}
           error={errors.description}
-          hint="This is the wording clients read on a quote. Keep it plain."
+          rows={6}
+          hint="One line per bullet point. Clients read this on a quote, so keep it plain."
         />
         <SelectField
           label="Type"

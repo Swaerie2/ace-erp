@@ -1,7 +1,7 @@
 // ACE Garden Services: core database schema.
 //
-// Modules 0, 1 and 2: organisation settings, staff users, audit log, customers, contacts,
-// properties, services. Quotes arrive in Module 3, and so on.
+// Modules 0 to 3: organisation settings, staff users, audit log, customers, contacts, properties,
+// services, quotes. Invoices arrive in Module 5, and so on.
 //
 // Rules for every future model:
 //   * Money is stored as whole cents (Int), never floats.
@@ -144,6 +144,7 @@ model Customer {
 
   contacts   Contact[]
   properties Property[]
+  quotes     Quote[]
 
   @@index([displayName])
   @@index([status])
@@ -177,31 +178,29 @@ model Contact {
 
 /// A place where work happens. A customer can have several.
 model Property {
-  id                    String            @id @default(uuid()) @db.Uuid
-  customerId            String            @db.Uuid
-  label                 String
-  addressLine1          String
-  addressLine2          String?
-  suburb                String?
-  city                  String?
-  postalCode            String?
-  mapUrl                String?
+  id            String            @id @default(uuid()) @db.Uuid
+  customerId    String            @db.Uuid
+  label         String
+  addressLine1  String
+  addressLine2  String?
+  suburb        String?
+  city          String?
+  postalCode    String?
+  mapUrl        String?
   /// Gate codes, dogs, who to call. Staff only, never shown to clients.
-  accessNotes           String?
-  lawnSizeSqm           Int?
-  grassType             String?
-  hasIrrigation         Boolean           @default(false)
-  terrainNotes          String?
-  frequency             ServiceFrequency?
-  preferredDay          String?
-  /// Plain field for now; replaced by the accepted quote's lines in Module 3.
-  agreedMonthlyFeeCents Int?
-  extrasNote            String?
-  archivedAt            DateTime?
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
+  accessNotes   String?
+  lawnSizeSqm   Int?
+  grassType     String?
+  hasIrrigation Boolean           @default(false)
+  terrainNotes  String?
+  frequency     ServiceFrequency?
+  preferredDay  String?
+  archivedAt    DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 
   customer Customer @relation(fields: [customerId], references: [id])
+  quotes   Quote[]
 
   @@index([customerId])
   @@map("properties")
@@ -225,6 +224,189 @@ model Service {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
+  scopeItems QuoteScopeItem[]
+
   @@index([sortOrder])
   @@map("services")
+}
+
+enum QuoteStatus {
+  DRAFT
+  ISSUED
+  ACCEPTED
+  DECLINED
+  REPLACED
+  WITHDRAWN
+}
+
+enum QuoteLineKind {
+  PRICED
+  OPTIONAL
+  INCLUDED
+}
+
+enum QuoteBilling {
+  MONTHLY
+  ONCE_OFF
+}
+
+enum QuoteFrequency {
+  WEEKLY
+  FORTNIGHTLY
+  MONTHLY
+  AS_REQUIRED
+}
+
+enum QuoteSentMethod {
+  WHATSAPP
+  EMAIL
+  HAND
+  OTHER
+}
+
+enum QuoteAcceptMethod {
+  WHATSAPP
+  EMAIL
+  PHONE
+  IN_PERSON
+  SIGNED_COPY
+  CLIENT_LINK
+}
+
+/// Exactly one row (id = "singleton"). The standard wording printed on quotes. Edited by the owner;
+/// each issued quote keeps its own frozen copy (Quote.wordingSnapshot).
+model QuoteWording {
+  id                  String   @id @default("singleton")
+  tagline             String
+  /// string[]
+  standardExclusions  Json
+  /// { heading: string, body: string }[]
+  monthlyTerms        Json
+  onceOffTerms        Json
+  commonTerms         Json
+  /// string[]
+  everyVisitPoints    Json
+  defaultValidityDays Int      @default(30)
+  registrationNumber  String
+  phone               String
+  email               String
+  website             String
+  updatedById         String?
+  updatedAt           DateTime @updatedAt
+
+  @@map("quote_wording")
+}
+
+/// A quote for one customer and one property. Drafts have no number; issuing freezes the content.
+model Quote {
+  id                    String             @id @default(uuid()) @db.Uuid
+  customerId            String             @db.Uuid
+  propertyId            String             @db.Uuid
+  status                QuoteStatus        @default(DRAFT)
+  /// QUO-<numberYear>-<numberSeq>, null while a draft. A revision keeps the number and raises `revision`.
+  numberYear            Int?
+  numberSeq             Int?
+  revision              Int                @default(1)
+  revisionOfId          String?            @db.Uuid
+  /// Raised on every draft save; guards against two devices editing one draft.
+  draftVersion          Int                @default(1)
+  validUntil            DateTime           @db.Date
+  /// Staff only. Personal data: scrubbed on anonymise.
+  internalNote          String?
+  createdById           String?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  issuedAt              DateTime?
+  issuedById            String?
+  sentAt                DateTime?
+  sentMethod            QuoteSentMethod?
+  /// The next five are frozen at issue and are personal data.
+  recipientName         String?
+  recipientEmail        String?
+  recipientPhone        String?
+  siteLabel             String?
+  siteAddress           String?
+  /// Frozen wording (tagline, exclusions, the terms that apply, every-visit points, business details).
+  wordingSnapshot       Json?
+  /// SHA-256 of the canonical content at issue: proves exactly what was accepted.
+  contentHash           String?
+  acceptedAt            DateTime?
+  acceptedMethod        QuoteAcceptMethod?
+  acceptedByName        String?
+  acceptedStartDate     DateTime?          @db.Date
+  acceptanceNote        String?
+  acceptedByStaffId     String?
+  acceptedIp            String?
+  acceptedUserAgent     String?
+  declinedAt            DateTime?
+  declineReason         String?
+  withdrawnAt           DateTime?
+  reversedAt            DateTime?
+  reversalNote          String?
+  /// Set when a later accepted monthly quote replaced this one as the property's agreement.
+  agreementEndedAt      DateTime?
+  agreementReplacedById String?            @db.Uuid
+
+  customer   Customer         @relation(fields: [customerId], references: [id])
+  property   Property         @relation(fields: [propertyId], references: [id])
+  revisionOf Quote?           @relation("QuoteRevisions", fields: [revisionOfId], references: [id])
+  revisions  Quote[]          @relation("QuoteRevisions")
+  scopeItems QuoteScopeItem[]
+  lines      QuoteLine[]
+
+  @@unique([numberYear, numberSeq, revision])
+  @@index([customerId])
+  @@index([propertyId])
+  @@index([status])
+  @@map("quotes")
+}
+
+/// One catalogue service on a quote: included or not, with its own copy of the wording.
+model QuoteScopeItem {
+  id          String      @id @default(uuid()) @db.Uuid
+  quoteId     String      @db.Uuid
+  serviceId   String      @db.Uuid
+  sortOrder   Int
+  included    Boolean     @default(false)
+  name        String
+  description String
+  kind        ServiceKind
+
+  quote   Quote   @relation(fields: [quoteId], references: [id])
+  service Service @relation(fields: [serviceId], references: [id])
+
+  @@unique([quoteId, serviceId])
+  @@index([quoteId])
+  @@map("quote_scope_items")
+}
+
+/// One price line. PRICED lines are in the totals, OPTIONAL lines are the client's choice,
+/// INCLUDED lines have no charge.
+model QuoteLine {
+  id          String          @id @default(uuid()) @db.Uuid
+  quoteId     String          @db.Uuid
+  sortOrder   Int
+  lineKind    QuoteLineKind
+  /// Empty for INCLUDED lines.
+  billing     QuoteBilling?
+  /// How often the visits are (MONTHLY billing) or AS_REQUIRED for add-ons.
+  frequency   QuoteFrequency?
+  description String
+  /// Whole cents, above zero for PRICED and OPTIONAL; empty for INCLUDED.
+  amountCents Int?
+  /// Set on acceptance: did the client take this optional add-on.
+  chosen      Boolean         @default(false)
+
+  quote Quote @relation(fields: [quoteId], references: [id])
+
+  @@index([quoteId])
+  @@map("quote_lines")
+}
+
+/// The last quote number given out in each year (South African year). Taken with one atomic statement.
+model QuoteCounter {
+  year    Int @id
+  lastSeq Int
+
+  @@map("quote_counters")
 }

@@ -55,7 +55,6 @@ function fakePerson() {
     mapUrl: `https://maps.example.com/${randomUUID()}`,
     accessNotes: tag("access"),
     terrainNotes: tag("terrain"),
-    extrasNote: tag("extras"),
     label2: tag("label2"),
     address2: tag("street3"),
     access2: tag("access2"),
@@ -91,7 +90,6 @@ function fakePerson() {
     v.mapUrl,
     v.accessNotes,
     v.terrainNotes,
-    v.extrasNote,
     v.label2,
     v.address2,
     v.access2,
@@ -141,8 +139,6 @@ async function makeFull(tx: Tx) {
       mapUrl: v.mapUrl,
       accessNotes: v.accessNotes,
       terrainNotes: v.terrainNotes,
-      extrasNote: v.extrasNote,
-      monthlyFee: "500",
     }),
   });
   await addContact(
@@ -159,7 +155,6 @@ async function makeFull(tx: Tx) {
       label: v.label2,
       addressLine1: v.address2,
       accessNotes: v.access2,
-      monthlyFee: "250",
     }),
   );
   // A later edit, so the audit log holds a customer.updated row from before anonymising.
@@ -311,7 +306,7 @@ describe.skipIf(!dbTestsEnabled)("customer privacy tools", () => {
         expect(leaks(JSON.stringify(rows), secrets), `personal data left in ${where}`).toEqual([]);
       }
 
-      // The record, its number and the money are kept.
+      // The record and its number are kept.
       expect(customerRow?.number).toBe(number);
       expect(customerRow?.anonymisedAt).not.toBeNull();
       expect(customerRow?.status).toBe("ARCHIVED");
@@ -319,7 +314,6 @@ describe.skipIf(!dbTestsEnabled)("customer privacy tools", () => {
       expect(customerRow?.statusBeforeArchive).toBeNull();
       expect(contactRows).toHaveLength(2);
       expect(propertyRows).toHaveLength(2);
-      expect(propertyRows.map((p) => p.agreedMonthlyFeeCents).sort()).toEqual([25000, 50000]);
 
       // Every personal column is empty or replaced, and portal login is switched off.
       expect(customerRow).toMatchObject({
@@ -357,7 +351,6 @@ describe.skipIf(!dbTestsEnabled)("customer privacy tools", () => {
           mapUrl: null,
           accessNotes: null,
           terrainNotes: null,
-          extrasNote: null,
         });
       }
 

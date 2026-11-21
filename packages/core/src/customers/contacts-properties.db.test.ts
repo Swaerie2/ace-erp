@@ -72,11 +72,13 @@ describe.skipIf(!dbTestsEnabled)("contacts and properties", () => {
         tx,
         manager,
         p.id,
-        propertySchema.parse({ label: "Cottage", addressLine1: "2 Test Road", monthlyFee: "400" }),
+        propertySchema.parse({
+          label: "Cottage",
+          addressLine1: "2 Test Road",
+          grassType: "Kikuyu",
+        }),
       );
-      expect((await getCustomer(tx, manager, id))?.properties[0]?.agreedMonthlyFeeCents).toBe(
-        40000,
-      );
+      expect((await getCustomer(tx, manager, id))?.properties[0]?.grassType).toBe("Kikuyu");
       await archiveProperty(tx, manager, p.id);
       expect((await getCustomer(tx, manager, id))?.properties).toHaveLength(0);
 
@@ -89,13 +91,11 @@ describe.skipIf(!dbTestsEnabled)("contacts and properties", () => {
         ]),
       );
       const updatedEntry = entries.find((a) => a.action === "customer.property_updated");
-      expect((updatedEntry?.after as { changed: string[] }).changed).toEqual([
-        "agreedMonthlyFeeCents",
-      ]);
+      expect((updatedEntry?.after as { changed: string[] }).changed).toEqual(["grassType"]);
       const auditText = JSON.stringify(entries);
       expect(auditText).not.toContain("Test Road");
       expect(auditText).not.toContain("Cottage");
-      expect(auditText).not.toContain("40000");
+      expect(auditText).not.toContain("Kikuyu");
     });
   });
 
@@ -138,7 +138,7 @@ describe.skipIf(!dbTestsEnabled)("contacts and properties", () => {
       const { id } = await createCustomer(tx, manager, base());
       const contactInput = { name: "Second", phone: "0821234567" };
       const second = await addContact(tx, manager, id, contactSchema.parse(contactInput));
-      const propInput = { label: "Cottage", addressLine1: "2 Test Road", monthlyFee: "400" };
+      const propInput = { label: "Cottage", addressLine1: "2 Test Road", grassType: "Kikuyu" };
       const prop = await addProperty(tx, manager, id, propertySchema.parse(propInput));
 
       const countAudit = () => tx.auditLog.count({ where: { entityId: id } });
@@ -178,7 +178,7 @@ describe.skipIf(!dbTestsEnabled)("contacts and properties", () => {
         tx,
         manager,
         prop.id,
-        propertySchema.parse({ ...propInput, monthlyFee: "450" }),
+        propertySchema.parse({ ...propInput, grassType: "Buffalo" }),
       );
       expect(await propStamp()).toBeGreaterThan(propBefore);
       expect(await customerStamp()).toBeGreaterThan(customerMid);

@@ -67,11 +67,75 @@ const PROPERTY: Record<string, Rule> = {
   terrainNotes: "scrubbed",
   frequency: "kept: enum (weekly, monthly...)",
   preferredDay: "kept: day of the week, not personal",
-  agreedMonthlyFeeCents: "kept: money, old invoices must still add up",
-  extrasNote: "scrubbed",
   archivedAt: "kept: timestamp",
   createdAt: "kept: timestamp",
   updatedAt: "kept: timestamp",
+};
+
+const QUOTE: Record<string, Rule> = {
+  id: "kept: identifier",
+  customerId: "kept: identifier",
+  propertyId: "kept: identifier",
+  status: "kept: enum, not personal",
+  numberYear: "kept: part of the quote reference",
+  numberSeq: "kept: part of the quote reference",
+  revision: "kept: whole number",
+  revisionOfId: "kept: identifier",
+  draftVersion: "kept: whole number",
+  validUntil: "kept: date the quote was valid until",
+  internalNote: "scrubbed",
+  createdById: "kept: staff id, not about the customer",
+  createdAt: "kept: timestamp",
+  updatedAt: "kept: timestamp",
+  issuedAt: "kept: timestamp",
+  issuedById: "kept: staff id, not about the customer",
+  sentAt: "kept: timestamp",
+  sentMethod: "kept: enum (whatsapp, email...)",
+  recipientName: "scrubbed",
+  recipientEmail: "scrubbed",
+  recipientPhone: "scrubbed",
+  siteLabel: "scrubbed",
+  siteAddress: "scrubbed",
+  wordingSnapshot: "kept: ACE's own standard wording, no customer details",
+  contentHash: "kept: fingerprint, cannot be turned back into the content",
+  acceptedAt: "kept: timestamp",
+  acceptedMethod: "kept: enum (whatsapp, phone...)",
+  acceptedByName: "scrubbed",
+  acceptedStartDate: "kept: date the service started",
+  acceptanceNote: "scrubbed",
+  acceptedByStaffId: "kept: staff id, not about the customer",
+  acceptedIp: "scrubbed",
+  acceptedUserAgent: "scrubbed",
+  declinedAt: "kept: timestamp",
+  declineReason: "scrubbed",
+  withdrawnAt: "kept: timestamp",
+  reversedAt: "kept: timestamp",
+  reversalNote: "scrubbed",
+  agreementEndedAt: "kept: timestamp",
+  agreementReplacedById: "kept: identifier",
+};
+
+const QUOTE_SCOPE_ITEM: Record<string, Rule> = {
+  id: "kept: identifier",
+  quoteId: "kept: identifier",
+  serviceId: "kept: identifier",
+  sortOrder: "kept: whole number",
+  included: "kept: yes/no setting",
+  name: "kept: service name from the catalogue, not personal",
+  description: "kept: service wording from the catalogue, not personal",
+  kind: "kept: enum (core or optional extra)",
+};
+
+const QUOTE_LINE: Record<string, Rule> = {
+  id: "kept: identifier",
+  quoteId: "kept: identifier",
+  sortOrder: "kept: whole number",
+  lineKind: "kept: enum, not personal",
+  billing: "kept: enum (monthly or once-off)",
+  frequency: "kept: enum (weekly...)",
+  description: "kept: price line wording written by staff, no personal details by design",
+  amountCents: "kept: money, old invoices must still add up",
+  chosen: "kept: yes/no, which add-on the client took",
 };
 
 function check(name: string, columns: Record<string, string>, table: Record<string, Rule>) {
@@ -92,4 +156,7 @@ describe("personal data coverage", () => {
   check("customers", Prisma.CustomerScalarFieldEnum, CUSTOMER);
   check("contacts", Prisma.ContactScalarFieldEnum, CONTACT);
   check("properties", Prisma.PropertyScalarFieldEnum, PROPERTY);
+  check("quotes", Prisma.QuoteScalarFieldEnum, QUOTE);
+  check("quote scope items", Prisma.QuoteScopeItemScalarFieldEnum, QUOTE_SCOPE_ITEM);
+  check("quote lines", Prisma.QuoteLineScalarFieldEnum, QUOTE_LINE);
 });

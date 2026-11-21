@@ -19,6 +19,13 @@ const label: Record<string, string> = {
   "customer.anonymised": "Anonymised",
 };
 
+function labelFor(e: { action: string; after: unknown }): string {
+  if (e.action === "customer.activated" && (e.after as { via?: unknown } | null)?.via === "quote") {
+    return "Activated by quote acceptance";
+  }
+  return label[e.action] ?? e.action;
+}
+
 /** Field names only. The audit entry's other contents are never shown. */
 function changedFields(after: unknown): string[] {
   const changed = (after as { changed?: unknown } | null)?.changed;
@@ -33,7 +40,7 @@ export function ActivityTab({ entries }: { entries: Entries }) {
         const fields = changedFields(e.after);
         return (
           <li key={e.id} className="px-4 py-3 text-sm">
-            <p className="font-semibold text-forest">{label[e.action] ?? e.action}</p>
+            <p className="font-semibold text-forest">{labelFor(e)}</p>
             <p className="text-charcoal/60">
               {e.actorName} · {formatDateTime(e.at)}
               {fields.length ? ` · fields: ${fields.join(", ")}` : ""}

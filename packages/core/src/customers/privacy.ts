@@ -7,7 +7,11 @@ export async function exportCustomerData(store: Store, actor: Actor, id: string)
   assertRole(actor, OWNER_ONLY);
   const customer = await store.customer.findUnique({
     where: { id },
-    include: { contacts: true, properties: true },
+    include: {
+      contacts: true,
+      properties: true,
+      quotes: { include: { lines: true, scopeItems: true } },
+    },
   });
   if (!customer) throw new DomainError("That customer could not be found.");
   const activity = await store.auditLog.findMany({
@@ -61,7 +65,26 @@ export async function anonymiseCustomer(
       accessNotes: null,
       grassType: null,
       terrainNotes: null,
-      extrasNote: null,
+    },
+  });
+
+  // Quotes carry a frozen copy of the recipient and site, plus typed names, notes and reasons.
+  // The amounts, lines, wording and content fingerprint stay.
+  await store.quote.updateMany({
+    where: { customerId: id },
+    data: {
+      internalNote: null,
+      recipientName: null,
+      recipientEmail: null,
+      recipientPhone: null,
+      siteLabel: null,
+      siteAddress: null,
+      acceptedByName: null,
+      acceptanceNote: null,
+      acceptedIp: null,
+      acceptedUserAgent: null,
+      declineReason: null,
+      reversalNote: null,
     },
   });
 

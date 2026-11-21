@@ -1,6 +1,6 @@
 # Module 2: Services catalogue (design)
 
-Status: Implemented; real-browser check pending (branch module-2-services); awaiting owner merge. Date: 2026-11-19.
+Status: Implemented and verified, including a real-browser check (branch module-2-services); awaiting owner merge. Date: 2026-11-19.
 
 ## Goal
 

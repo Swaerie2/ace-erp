@@ -44,7 +44,7 @@ Each module is built, tested and approved before the next begins.
 | 0   | Foundation                   | Project, checks, staff sign-in and roles, audit log, backups, email, error alerts |
 | 1   | Customers                    | Client profiles, properties, contacts, notes, import from a spreadsheet           |
 | 2   | Services catalogue           | The list of services quotes are built from (no prices: each client is quoted)     |
-| 3   | Quotes                       | Create, PDF, email, client link to accept, decline or ask for changes             |
+| 3   | Quotes                       | 3a built (builder, PDF, accept by staff); 3b (client link) next                   |
 | 4   | Client portal and onboarding | Welcome and registration after acceptance, client sign-in, view quotes            |
 | 5   | Invoices and statements      | EFT invoices with payment reference, mark paid, proof of payment, statements      |
 | 6   | Jobs and scheduling          | Recurring weekly rounds, crew allocation                                          |
@@ -52,20 +52,9 @@ Each module is built, tested and approved before the next begins.
 
 Requirements carried forward to later modules:
 
-- **Module 3 (Quotes): lead becomes active on acceptance.** When a client accepts a quote, the
-  customer moves from Lead to Active automatically by calling `activateCustomer` (already built:
-  the staff "Mark as active" button on the customer page uses it). The change is recorded as
-  "activated by quote acceptance". Only leads convert automatically; if a paused or archived
-  customer accepts a quote, it is flagged to staff instead of changing silently.
-- **Module 3 (Quotes): phone-first quote builder with scope.** Built for use at a site visit on a
-  phone. Every active service is a row with an on/off switch; switched on rows take once-off or
-  recurring, visit frequency (weekly, every two weeks, monthly; always billed as one monthly
-  amount), price and a note; switched off rows show as "Not included, quoted separately on
-  request". Drafts save as you go; decide how it behaves with no signal on site. Each quote line
-  stores a copy of the service name, description and kind, and acceptance freezes the scope as the
-  customer's agreed scope. Do not treat `services.updatedAt` as "last edited": it is also touched
-  by row locks. Work requested outside that scope becomes an extra-work quote. Module 3 also replaces the
-  temporary property fee and extras fields (migration to be approved then).
+- **Module 3b (Quotes): client link.** A private link per quote so the client can accept or
+  decline (see the Quotes section). Extra work asked for later is simply a new quote for the same
+  property.
 - **Module 6 (Jobs): crew see the agreed scope** for each property, so included work and extras
   are clear on the day.
 
@@ -157,8 +146,10 @@ These apply to every module. A module is not finished until it follows all of th
   contacts in Module 3.
 - The row lock is a touch of `updatedAt`. Switch to `SELECT ... FOR UPDATE` before Module 3 locks
   customers.
-- Extend `anonymiseCustomer` and `privacy-coverage.test.ts` to every new table that holds customer
-  data (quotes, invoices), and drive that test from the set of scrubbed fields.
+- ~~Extend `anonymiseCustomer`, `privacy-coverage.test.ts` and the export to quotes.~~ Done in
+  Module 3a. The draft-save and revise paths also refuse an anonymised customer's quote, so
+  personal text cannot be written back into one. Still to extend when they exist: invoices and any
+  other table that holds customer data, and drive that test from the set of scrubbed fields.
 - Imported customers have no per-customer audit row (the import writes one line with counts).
 - Bind form ids to their customer in core (for example a contact id must belong to the customer
   in the URL) before Module 4 adds client logins.
@@ -207,6 +198,72 @@ These apply to every module. A module is not finished until it follows all of th
   Any generated migration must be read for a DROP of them, and migrations are produced with
   `prisma migrate diff` (schema to schema), not `prisma migrate dev`, against the shared dev
   database.
+
+## Quotes (Module 3a)
+
+- **Tables:** `quote_wording` (one owner-edited row), `quotes`, `quote_scope_items`, `quote_lines`
+  and `quote_counters`, hardened like every table (Row Level Security on, no public access). Money
+  is whole cents. Issued quotes are never deleted; only a never-issued draft can be deleted.
+- **Statuses and rules:**
+  - `DRAFT`: editable, saves as you go (a version number stops two devices overwriting each other).
+  - `ISSUED`: frozen. Can be marked as sent, accepted, declined, withdrawn or revised.
+  - `ACCEPTED`: never edited. Only the owner can reverse it (back to `ISSUED`, with a note).
+  - `DECLINED`, `WITHDRAWN`: closed. A revision can still be started from them.
+  - `REPLACED`: set only on an `ISSUED` source quote when its revision is issued.
+  - Expired is not stored. A quote is expired when it is `ISSUED` and the South African date is
+    after its valid-until date. An expired quote cannot be accepted; revise it instead.
+  - Only one draft revision may exist in a numbered quote chain at a time.
+- **Numbering:** `QUO-year-number` (for example `QUO-2026-0104`), with ` R2`, ` R3` for revisions.
+  The number is given when the quote is issued, using one atomic counter statement per year
+  (`quote_counters`), so two quotes issued at the same moment never share a number and drafts
+  leave no gaps.
+- **Frozen content:** at issue the recipient, the property label and address, the scope rows, the
+  wording snapshot (tagline, exclusions, the terms that apply, every-visit points, business
+  details) and a SHA-256 content hash are stored on the quote. Changing the wording or the services
+  later never changes an issued quote. The PDF and the quote page show only this frozen content.
+- **Agreement rule:** a property's current monthly agreement is its most recent accepted quote that
+  has a monthly priced line. Accepting a new one ends the earlier ones (`quote.agreement_ended`).
+  Accepted once-off quotes are listed separately and are never ended. Accepting also makes a lead
+  active ("activated by quote acceptance"); a paused or archived customer is flagged, not changed.
+  Accept and reverse lock the customer, then the property, then the quote, in that order.
+- **Who can do what:** OWNER and MANAGER build, issue, send, accept, decline, withdraw and revise.
+  Reversing an acceptance and editing the quote wording (`/settings/quote-wording`) are OWNER only.
+  CREW get nothing: every page, action, route and core function checks the role first. The checks
+  live in `packages/core/src/quotes/`, not in the screens.
+- **Privacy extension:** audit lines hold field names, ids and fixed words only, never typed text.
+  Anonymising a customer wipes the personal columns on their quotes (recipient, site, acceptance
+  name and note, decline and reversal notes, internal note, accepted IP and browser). Amounts, lines,
+  wording and the content hash stay. Anonymised customers' quotes cannot be accepted, declined or
+  reversed. The privacy guard test covers every quote column, and the customer export includes the
+  customer's quotes.
+- **PDF:** generated on the server with the built-in PDF fonts (Helvetica), so no font files are
+  bundled. The route is staff only.
+- **Hand-written SQL:** the check constraints, the RLS and REVOKE statements, the unique index on
+  the quote number and the seeded `quote_wording` row in the quotes migration are hand-written SQL
+  that Prisma does not know about (same note as services). Any generated migration must be read for
+  a DROP of them, and migrations are produced with `prisma migrate diff`, not `prisma migrate dev`.
+  A second migration removed the two temporary property columns (monthly fee and extras note).
+
+### Known limitations and follow-ups
+
+- Quotes have no client link yet (Phase 3b). Until then staff share the PDF themselves.
+- For Phase 3b: `acceptQuote` is staff-bound (role check, staff id, `STAFF` audit actor, and the
+  `activateCustomer` role check). The client link will need a shared internal accept function that
+  takes an actor type, with the staff action and the client action both calling it.
+- The wording row lists (exclusions, terms, every-visit points) are stored as JSON.
+- The customer Activity tab does not list quote events. They appear on the quote itself.
+- `quote_lines.description` is staff text and is assumed to be free of personal details. The
+  builder shows a short hint under the field, but nothing enforces it.
+- Two staff saving the one wording row at the same moment can overwrite each other (it is a single
+  settings row).
+- The quote number counter is per year and gap-free only inside the issuing transaction.
+
+### Before real customer data goes in
+
+- [ ] Check the standard quote wording, the once-off terms (drafted by Claude from the owner's
+      description), the "Every visit on record" points (some promises depend on the Jobs module)
+      and the business details on a test quote in the live app.
+- [ ] Have the terms read by a legal adviser once.
 
 ## Working agreement
 

@@ -24,8 +24,6 @@ const row = (over: Partial<RawImportRow>): RawImportRow => ({
   property_suburb: "",
   property_city: "",
   frequency: "",
-  monthly_fee_rand: "",
-  extras: "",
   source: "",
   notes: "",
   ...over,
@@ -47,7 +45,6 @@ describe.skipIf(!dbTestsEnabled)("customer import", () => {
           display_name: "New B",
           phone: "082 555 0101",
           property_address: "5 Import St",
-          monthly_fee_rand: "400",
         }),
       ]);
       expect(preview.create.map((r) => r.customer.displayName)).toEqual(["New A", "New B"]);
@@ -104,7 +101,7 @@ describe.skipIf(!dbTestsEnabled)("customer import", () => {
           display_name: "Commit A",
           email: "commita@example.com",
           property_address: "1 Commit Rd",
-          monthly_fee_rand: "850",
+          frequency: "weekly",
         }),
         row({ display_name: "Commit B", phone: "0825550102" }),
         row({ display_name: "Broken", email: "x" }),
@@ -116,7 +113,8 @@ describe.skipIf(!dbTestsEnabled)("customer import", () => {
         orderBy: { displayName: "asc" },
       });
       expect(made).toHaveLength(2);
-      expect(made[0]?.properties[0]?.agreedMonthlyFeeCents).toBe(85000);
+      expect(made[0]?.properties[0]?.addressLine1).toBe("1 Commit Rd");
+      expect(made[0]?.properties[0]?.frequency).toBe("WEEKLY");
       expect(made[1]?.contacts[0]?.phone).toBe("+27825550102");
 
       const audit = await tx.auditLog.findFirst({

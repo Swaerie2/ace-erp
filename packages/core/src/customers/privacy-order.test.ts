@@ -33,21 +33,27 @@ function fakeStore(opts: { scrubCount?: number; failOn?: string } = {}) {
     },
     contact: { updateMany: record("contact.updateMany") },
     property: { updateMany: record("property.updateMany") },
+    quote: { updateMany: record("quote.updateMany") },
     auditLog: { create: record("auditLog.create") },
   } as unknown as Store;
   return { store, calls };
 }
 
 describe("anonymiseCustomer write order", () => {
-  it("scrubs contacts and properties first, and the customer row (with anonymisedAt) last", async () => {
+  it("scrubs contacts, properties and quotes first, and the customer row (with anonymisedAt) last", async () => {
     const { store, calls } = fakeStore();
     await anonymiseCustomer(store, owner, ID, "C-0007");
 
     const ops = calls.map((c) => c.op);
     const scrubIndex = calls.findIndex((c) => c.data && "anonymisedAt" in c.data);
     expect(ops[scrubIndex]).toBe("customer.updateMany");
+    // indexOf is -1 for a missing call, which would pass "less than" below: check each one ran.
+    expect(ops).toContain("contact.updateMany");
+    expect(ops).toContain("property.updateMany");
+    expect(ops).toContain("quote.updateMany");
     expect(ops.indexOf("contact.updateMany")).toBeLessThan(scrubIndex);
     expect(ops.indexOf("property.updateMany")).toBeLessThan(scrubIndex);
+    expect(ops.indexOf("quote.updateMany")).toBeLessThan(scrubIndex);
     // Nothing writes to the customer after the scrub except the audit line.
     expect(ops.slice(scrubIndex + 1)).toEqual(["auditLog.create"]);
     // The final update is conditional, so a second run cannot slip through.

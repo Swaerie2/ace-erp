@@ -11,3 +11,4 @@ export type { CreateStaffInput } from "./staff";
 export { AuditActorType, StaffRole } from "./generated/prisma/enums";
 export * from "./customers";
 export * from "./services";
+export * from "./quotes";

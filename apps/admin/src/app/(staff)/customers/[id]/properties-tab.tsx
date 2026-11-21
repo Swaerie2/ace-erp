@@ -1,7 +1,8 @@
-import { formatZAR, type getCustomer } from "@ace/core";
+import type { getCustomer, getPropertyAgreement } from "@ace/core";
 import Link from "next/link";
 import { secondaryButtonClass } from "@/components/form";
 import { archivePropertyAction } from "../actions";
+import { AgreementPanel } from "./agreement-panel";
 import { PropertyForm, type PropertyRow } from "./property-form";
 
 type Customer = NonNullable<Awaited<ReturnType<typeof getCustomer>>>;
@@ -24,8 +25,6 @@ function toRow(p: Customer["properties"][number]): PropertyRow {
     terrainNotes: p.terrainNotes,
     frequency: p.frequency,
     preferredDay: p.preferredDay,
-    agreedMonthlyFeeCents: p.agreedMonthlyFeeCents,
-    extrasNote: p.extrasNote,
   };
 }
 
@@ -33,10 +32,12 @@ export function PropertiesTab({
   customer,
   edit,
   add,
+  agreements,
 }: {
   customer: Customer;
   edit?: string | undefined;
   add: boolean;
+  agreements: Record<string, Awaited<ReturnType<typeof getPropertyAgreement>>>;
 }) {
   const locked = Boolean(customer.anonymisedAt);
   const editing = locked ? undefined : customer.properties.find((p) => p.id === edit);
@@ -103,14 +104,6 @@ export function PropertiesTab({
                 </dd>
               </div>
               <div>
-                <dt className="inline text-charcoal/60">Monthly fee: </dt>
-                <dd className="inline">
-                  {p.agreedMonthlyFeeCents === null
-                    ? "not set"
-                    : formatZAR(p.agreedMonthlyFeeCents)}
-                </dd>
-              </div>
-              <div>
                 <dt className="inline text-charcoal/60">Lawn: </dt>
                 <dd className="inline">
                   {[
@@ -121,10 +114,6 @@ export function PropertiesTab({
                     .filter(Boolean)
                     .join(", ") || "—"}
                 </dd>
-              </div>
-              <div>
-                <dt className="inline text-charcoal/60">Extras: </dt>
-                <dd className="inline">{p.extrasNote || "—"}</dd>
               </div>
               {p.accessNotes ? (
                 <div className="sm:col-span-2">
@@ -139,6 +128,7 @@ export function PropertiesTab({
                 </div>
               ) : null}
             </dl>
+            <AgreementPanel agreement={agreements[p.id] ?? { current: null, onceOff: [] }} />
           </li>
         ))}
       </ul>

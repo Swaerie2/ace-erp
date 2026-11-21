@@ -3,7 +3,9 @@ import {
   getCustomer,
   getCustomerForCrew,
   getDb,
+  getPropertyAgreement,
   listCustomerActivity,
+  listQuotes,
 } from "@ace/core";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -17,10 +19,11 @@ import { ContactsTab } from "./contacts-tab";
 import { CrewView } from "./crew-view";
 import { OverviewTab } from "./overview-tab";
 import { PropertiesTab } from "./properties-tab";
+import { QuotesTab } from "./quotes-tab";
 
 type Param = string | string[] | undefined;
 type Search = { tab?: Param; edit?: Param; add?: Param; error?: Param };
-const TABS = ["overview", "contacts", "properties", "activity"] as const;
+const TABS = ["overview", "contacts", "properties", "quotes", "activity"] as const;
 type Tab = (typeof TABS)[number];
 
 export default async function CustomerPage({
@@ -104,7 +107,25 @@ export default async function CustomerPage({
         ) : tab === "contacts" ? (
           <ContactsTab customer={customer} edit={edit} add={add === "1"} notice={notice} />
         ) : tab === "properties" ? (
-          <PropertiesTab customer={customer} edit={edit} add={add === "1"} />
+          <PropertiesTab
+            customer={customer}
+            edit={edit}
+            add={add === "1"}
+            agreements={Object.fromEntries(
+              await Promise.all(
+                customer.properties.map(
+                  async (p) => [p.id, await getPropertyAgreement(getDb(), actor, p.id)] as const,
+                ),
+              ),
+            )}
+          />
+        ) : tab === "quotes" ? (
+          <QuotesTab
+            customerId={id}
+            customerName={customer.displayName}
+            result={await listQuotes(getDb(), actor, { customerId: id, pageSize: 50 })}
+            canQuote={customer.status !== "ARCHIVED" && !customer.anonymisedAt}
+          />
         ) : (
           <ActivityTab entries={await listCustomerActivity(getDb(), actor, id)} />
         )}

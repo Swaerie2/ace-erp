@@ -4,3 +4,6 @@ packages/core/src/generated
 package-lock.json
 coverage
 .superpowers/
+
+# Implementation plans hold code snippets that are copied verbatim into tasks.
+docs/superpowers/plans/
