@@ -1,6 +1,6 @@
 # Module 3b: The private client link for quotes (design)
 
-Status: Draft for owner review. Date: 2026-11-21.
+Status: Implemented, browser check pending (branch module-3b-client-link). Date: 2026-11-21.
 
 This builds on the approved Module 3 design (`2026-11-19-quotes-design.md`, section "Phase 3b: the private client link") and on phase 3a, which is merged. Where this document is more specific, this document wins.
 
@@ -93,6 +93,7 @@ The form has: a tick box for each optional add-on, **Full name** (required), **S
 - ends the property's earlier monthly agreement when this quote has monthly work (the agreement rule);
 - makes a LEAD customer active (audit "activated by quote acceptance"), and leaves a PAUSED or ARCHIVED customer unchanged;
 - writes the audit entry `quote.accepted` with actor type `CUSTOMER` (fixed words and counts only, never the name).
+- the portal role may also write `acceptedByStaffId` (it sets it to empty), but cannot read it.
 
 Pressing Accept twice records one acceptance: the second request finds the quote already accepted and shows the confirmation page. Acceptance by an anonymised customer's link cannot happen (the link no longer exists).
 
@@ -102,7 +103,7 @@ An optional reason (up to 500 characters). Sets DECLINED, `declinedByClient = tr
 
 ### Rate limits
 
-Per visitor (hashed IP) in a 10-minute window: 120 page views and PDF downloads, and 10 accept or decline attempts. Over the limit the visitor gets a plain "Too many requests, please try again in a few minutes" page (HTTP 429). Staff are not affected (they use the staff app).
+Per visitor (hashed IP) in a 10-minute window: 120 page views and PDF downloads, and 10 accept or decline attempts. Over the limit, the PDF route answers with a real HTTP 429 and the page shows a plain "Too many requests, please try again in a few minutes" notice (a Next.js page cannot set its own status code). Staff are not affected (they use the staff app).
 
 ### PDF for clients
 
