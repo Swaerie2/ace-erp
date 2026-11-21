@@ -3,7 +3,7 @@
 import { useActionState, useRef } from "react";
 import { inputClass } from "@/components/auth-card";
 import { dangerButtonClass, FormMessage } from "@/components/form";
-import { useFocusOnFeedback } from "@/lib/use-focus-on-feedback";
+import { useFocusOnFeedback } from "@ace/ui/use-focus-on-feedback";
 import { anonymiseCustomerAction } from "../actions";
 
 export function OwnerTools({ id, number }: { id: string; number: string }) {

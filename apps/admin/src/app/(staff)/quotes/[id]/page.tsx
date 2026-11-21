@@ -23,7 +23,7 @@ import { QuoteBuilder } from "./builder";
 import type { BuilderInitial } from "./builder-types";
 import { loadDocument } from "./document-input";
 import { QuoteHistory } from "./history";
-import { QuoteDocumentView } from "./quote-document";
+import { QuoteDocumentView } from "@ace/ui/quote-document";
 import { QuoteFacts } from "./quote-facts";
 
 const NOTICES: Record<string, string> = {
