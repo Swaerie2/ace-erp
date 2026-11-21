@@ -10,6 +10,9 @@ const NO_STORE = { "Cache-Control": "private, no-store" };
 export async function GET(_request: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const visitor = await getVisitor();
+  // Link previews, crawlers and clients with no browser string get no quote data from any route.
+  // Checked before the rate limit so they do not use up allowance.
+  if (visitor.isBot) return new Response("Not found", { status: 404, headers: NO_STORE });
   const db = getPortalDb();
   // A route can answer with a real 429 (a page cannot).
   if (!(await checkRateLimit(db, "view", visitor.ipHash)).allowed) {

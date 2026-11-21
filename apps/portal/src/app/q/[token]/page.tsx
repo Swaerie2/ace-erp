@@ -51,6 +51,7 @@ export default async function QuoteLinkPage({ params }: { params: Promise<{ toke
             {quote.newerToken ? (
               <Link
                 href={`/q/${encodeURIComponent(quote.newerToken)}`}
+                prefetch={false}
                 className="mt-2 inline-flex min-h-11 items-center rounded-full bg-forest px-6 py-2.5 font-display text-sm font-semibold text-cream hover:bg-forest-deep"
               >
                 View the newer quotation

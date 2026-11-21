@@ -35,12 +35,17 @@ function errorsFrom(error: z.ZodError): Record<string, string> {
   return out;
 }
 
-/** Counts the attempt against the visitor's allowance. Refuses crawlers and clients with no browser string. */
-async function guard(): Promise<{ visitor: Visitor } | { refused: FormState }> {
+/**
+ * Counts the attempt against the visitor's allowance. Refuses crawlers and clients with no browser string.
+ * A refusal hands back what was typed, so the form does not wipe it.
+ */
+async function guard(
+  values: Record<string, string>,
+): Promise<{ visitor: Visitor } | { refused: FormState }> {
   const visitor = await getVisitor();
-  if (visitor.isBot) return { refused: { error: BAD_REQUEST, nonce: Date.now() } };
+  if (visitor.isBot) return { refused: { error: BAD_REQUEST, values, nonce: Date.now() } };
   if (!(await checkRateLimit(getPortalDb(), "act", visitor.ipHash)).allowed) {
-    return { refused: { error: TRY_AGAIN, nonce: Date.now() } };
+    return { refused: { error: TRY_AGAIN, values, nonce: Date.now() } };
   }
   return { visitor };
 }
@@ -56,10 +61,10 @@ export async function acceptAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const guarded = await guard();
-  if ("refused" in guarded) return guarded.refused;
   const chosen = formData.getAll("chosen").filter((v): v is string => typeof v === "string");
   const values: Record<string, string> = { ...formValues(formData), chosen: chosen.join(",") };
+  const guarded = await guard(values);
+  if ("refused" in guarded) return guarded.refused;
   if (formData.get("agree") !== "on") {
     return {
       fieldErrors: { agree: "Tick the box to accept this quotation." },
@@ -72,7 +77,17 @@ export async function acceptAction(
     startDate: values.startDate ?? "",
     chosenLineIds: chosen,
   });
-  if (!parsed.success) return { fieldErrors: errorsFrom(parsed.error), values, nonce: Date.now() };
+  if (!parsed.success) {
+    const fieldErrors = errorsFrom(parsed.error);
+    // An error on a field the form does not show (a crafted request) would otherwise be invisible.
+    const hidden = Object.keys(fieldErrors).some((k) => k !== "acceptedBy" && k !== "startDate");
+    return {
+      fieldErrors,
+      ...(hidden ? { error: BAD_REQUEST } : {}),
+      values,
+      nonce: Date.now(),
+    };
+  }
   try {
     await inPortalTx((tx) =>
       acceptViaLink(tx, token, parsed.data, {
@@ -93,9 +108,9 @@ export async function declineAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const guarded = await guard();
-  if ("refused" in guarded) return guarded.refused;
   const values = formValues(formData);
+  const guarded = await guard(values);
+  if ("refused" in guarded) return guarded.refused;
   const parsed = linkDeclineSchema.safeParse({ reason: values.reason ?? "" });
   if (!parsed.success) return { fieldErrors: errorsFrom(parsed.error), values, nonce: Date.now() };
   try {

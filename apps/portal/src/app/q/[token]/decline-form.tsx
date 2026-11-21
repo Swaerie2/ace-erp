@@ -37,10 +37,13 @@ export function DeclineForm({ token }: { token: string }) {
             maxLength={500}
             defaultValue={state?.values?.reason ?? ""}
             aria-invalid={state?.fieldErrors?.reason ? true : undefined}
+            aria-describedby={state?.fieldErrors?.reason ? "reason-error" : undefined}
             className={fieldClass}
           />
           {state?.fieldErrors?.reason ? (
-            <p className="mt-1 text-sm text-red-700">{state.fieldErrors.reason}</p>
+            <p id="reason-error" className="mt-1 text-sm text-red-700">
+              {state.fieldErrors.reason}
+            </p>
           ) : null}
         </div>
         <button
