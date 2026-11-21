@@ -15,6 +15,7 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 import { toActor } from "@/lib/actor";
 import { requireStaff } from "@/lib/auth";
+import { getPortalUrl } from "@/lib/portal-url";
 import { first } from "@/lib/search-params";
 import { deleteDraftAction } from "../actions";
 import { QuoteStatusBadge } from "../status-badge";
@@ -23,6 +24,7 @@ import { QuoteBuilder } from "./builder";
 import type { BuilderInitial } from "./builder-types";
 import { loadDocument } from "./document-input";
 import { QuoteHistory } from "./history";
+import { LinkPanel } from "./link-panel";
 import { QuoteDocumentView } from "@ace/ui/quote-document";
 import { QuoteFacts } from "./quote-facts";
 
@@ -120,6 +122,8 @@ export default async function QuotePage({
     .filter((l) => l.lineKind === "OPTIONAL")
     .map((l) => ({ id: l.id, label: `${l.description} (${formatZAR(l.amountCents ?? 0)})` }));
   const history = await listQuoteActivity(getDb(), actor, id);
+  // The link is never shown for a draft, a replaced or withdrawn quote, or an anonymised customer.
+  const linkShown = ["ISSUED", "EXPIRED", "ACCEPTED", "DECLINED"].includes(displayStatus(quote));
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -151,7 +155,15 @@ export default async function QuotePage({
         </p>
       ) : null}
       <div className="mt-4 space-y-3">
-        <QuoteFacts quote={quote} />
+        <QuoteFacts quote={quote} customerStatus={quote.customer.status} />
+        {linkShown && !quote.customer.anonymisedAt ? (
+          <LinkPanel
+            id={quote.id}
+            url={quote.linkToken ? `${getPortalUrl()}/q/${quote.linkToken}` : null}
+            firstViewedAt={quote.firstViewedAt}
+            lastViewedAt={quote.lastViewedAt}
+          />
+        ) : null}
         <ActionPanel
           id={quote.id}
           status={displayStatus(quote)}

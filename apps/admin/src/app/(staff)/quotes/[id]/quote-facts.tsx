@@ -12,7 +12,14 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-export function QuoteFacts({ quote }: { quote: Quote }) {
+export function QuoteFacts({
+  quote,
+  customerStatus,
+}: {
+  quote: Quote;
+  customerStatus: "LEAD" | "ACTIVE" | "PAUSED" | "ARCHIVED";
+}) {
+  const onLink = quote.acceptedMethod === "CLIENT_LINK";
   const chosen = quote.lines.filter((l) => l.lineKind === "OPTIONAL" && l.chosen);
   const rows: React.ReactNode[] = [];
   if (quote.sentAt) {
@@ -27,10 +34,19 @@ export function QuoteFacts({ quote }: { quote: Quote }) {
     rows.push(
       <Row key="accepted" label="Accepted">
         {formatDateTime(quote.acceptedAt)}
-        {quote.acceptedMethod ? ` (${ACCEPT_METHOD_LABELS[quote.acceptedMethod]})` : ""}
-        {quote.acceptedByName ? ` by ${quote.acceptedByName}` : ""}
+        {onLink
+          ? ` on the client link by ${quote.acceptedByName ?? "the client"}`
+          : `${quote.acceptedMethod ? ` (${ACCEPT_METHOD_LABELS[quote.acceptedMethod]})` : ""}${quote.acceptedByName ? ` by ${quote.acceptedByName}` : ""}`}
       </Row>,
     );
+    if (onLink && (customerStatus === "PAUSED" || customerStatus === "ARCHIVED")) {
+      rows.push(
+        <Row key="customer" label="Check the customer">
+          The customer is {customerStatus === "PAUSED" ? "paused" : "archived"}, so they were not
+          made active.
+        </Row>,
+      );
+    }
     if (quote.acceptedStartDate) {
       rows.push(
         <Row key="start" label="Service starts">
@@ -64,6 +80,7 @@ export function QuoteFacts({ quote }: { quote: Quote }) {
     rows.push(
       <Row key="declined" label="Declined">
         {formatDateTime(quote.declinedAt)}
+        {quote.declinedByClient ? " by the client on the link" : ""}
         {quote.declineReason ? `: ${quote.declineReason}` : ""}
       </Row>,
     );
