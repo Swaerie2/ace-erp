@@ -27,6 +27,17 @@ export class QuoteExpiredError extends DomainError {
   }
 }
 
+/**
+ * The quote was found by a client link code that is no longer its current one (the link was revoked or
+ * replaced after the request found the quote). The client sees "not found".
+ */
+export class LinkNoLongerValidError extends DomainError {
+  constructor() {
+    super("That link is no longer valid.");
+    this.name = "LinkNoLongerValidError";
+  }
+}
+
 export type AcceptContext = {
   audit: AuditParty;
   method: "WHATSAPP" | "EMAIL" | "PHONE" | "IN_PERSON" | "SIGNED_COPY" | "CLIENT_LINK";
@@ -34,6 +45,11 @@ export type AcceptContext = {
   staffId: string | null;
   ip: string | null;
   userAgent: string | null;
+  /**
+   * Set by the client link: the code the quote was found by. If the quote's current code is different
+   * when the quote is read again under the locks, nothing is done. Staff callers leave it out.
+   */
+  expectLinkToken?: string | undefined;
 };
 
 /** A monthly agreement means a priced monthly line, or an optional monthly line the client chose. */
@@ -48,8 +64,14 @@ const ACCEPT_SELECT = {
   propertyId: true,
   status: true,
   validUntil: true,
+  linkToken: true,
   lines: { select: { id: true, lineKind: true, billing: true } },
 } as const satisfies Prisma.QuoteSelect;
+
+/** A revoked or replaced link stops working at once, even for a request that had already found the quote. */
+function assertLinkStillCurrent(currentToken: string | null, expected: string | undefined) {
+  if (expected !== undefined && currentToken !== expected) throw new LinkNoLongerValidError();
+}
 
 async function readForAccept(store: AcceptStore, id: string) {
   const quote = await store.quote.findUnique({ where: { id }, select: ACCEPT_SELECT });
@@ -74,6 +96,7 @@ export async function acceptCore(
   },
 ): Promise<{ customerFlag: "PAUSED" | "ARCHIVED" | null }> {
   const check = (q: Awaited<ReturnType<typeof readForAccept>>) => {
+    assertLinkStillCurrent(q.linkToken, ctx.expectLinkToken);
     if (q.status !== "ISSUED") {
       throw new QuoteNotIssuedError(q.status, "Only an issued quote can be accepted.");
     }
@@ -179,16 +202,17 @@ export async function acceptCore(
 /** Declining: ISSUED only. Lock order customer, then quote. */
 export async function declineCore(
   store: AcceptStore,
-  ctx: { audit: AuditParty; declinedByClient: boolean },
+  ctx: { audit: AuditParty; declinedByClient: boolean; expectLinkToken?: string | undefined },
   quoteId: string,
   input: { reason?: string | undefined },
 ): Promise<void> {
   const read = async () => {
     const quote = await store.quote.findUnique({
       where: { id: quoteId },
-      select: { id: true, customerId: true, status: true },
+      select: { id: true, customerId: true, status: true, linkToken: true },
     });
     if (!quote) throw new DomainError("That quote could not be found.");
+    assertLinkStillCurrent(quote.linkToken, ctx.expectLinkToken);
     if (quote.status !== "ISSUED") {
       throw new QuoteNotIssuedError(quote.status, "Only an issued quote can be declined.");
     }

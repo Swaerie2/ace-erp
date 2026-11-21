@@ -1,4 +1,12 @@
-export * from "./acceptance";
+// acceptCore and declineCore are deliberately not exported here: they do no role or token check, so
+// only staff and portal code in this package (which do their own) may import them from "./acceptance".
+export {
+  LinkNoLongerValidError,
+  QuoteExpiredError,
+  QuoteNotIssuedError,
+  type AcceptContext,
+  type AcceptStore,
+} from "./acceptance";
 export * from "./activity";
 export * from "./bots";
 export * from "./content";

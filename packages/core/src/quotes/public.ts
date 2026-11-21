@@ -3,7 +3,13 @@ import { clientParty } from "../audit";
 import type { Db } from "../db";
 import type { Prisma } from "../generated/prisma/client";
 import { formatZAR } from "../money";
-import { QuoteExpiredError, QuoteNotIssuedError, acceptCore, declineCore } from "./acceptance";
+import {
+  LinkNoLongerValidError,
+  QuoteExpiredError,
+  QuoteNotIssuedError,
+  acceptCore,
+  declineCore,
+} from "./acceptance";
 import { buildQuoteDocument, type QuoteDocument } from "./document";
 import { publicViewState, type PublicViewState } from "./public-state";
 import {
@@ -264,12 +270,14 @@ export async function acceptViaLink(
         staffId: null,
         ip: ctx.ip,
         userAgent: ctx.userAgent,
+        expectLinkToken: token,
       },
       found.id,
       input,
     );
     return { outcome: "ACCEPTED", customerFlag };
   } catch (error) {
+    if (error instanceof LinkNoLongerValidError) return { outcome: "NOT_FOUND" };
     if (error instanceof QuoteExpiredError) return { outcome: "EXPIRED" };
     if (error instanceof QuoteNotIssuedError) {
       return error.status === "ACCEPTED"
@@ -308,12 +316,13 @@ export async function declineViaLink(
   try {
     await declineCore(
       store,
-      { audit: clientParty(found.customerId), declinedByClient: true },
+      { audit: clientParty(found.customerId), declinedByClient: true, expectLinkToken: token },
       found.id,
       input,
     );
     return { outcome: "DECLINED" };
   } catch (error) {
+    if (error instanceof LinkNoLongerValidError) return { outcome: "NOT_FOUND" };
     if (error instanceof QuoteNotIssuedError) {
       return error.status === "DECLINED"
         ? { outcome: "ALREADY_DECLINED" }

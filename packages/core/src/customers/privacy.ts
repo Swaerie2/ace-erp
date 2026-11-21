@@ -10,7 +10,8 @@ export async function exportCustomerData(store: Store, actor: Actor, id: string)
     include: {
       contacts: true,
       properties: true,
-      quotes: { include: { lines: true, scopeItems: true } },
+      // The live client link code is a credential, not something held about the customer.
+      quotes: { omit: { linkToken: true }, include: { lines: true, scopeItems: true } },
     },
   });
   if (!customer) throw new DomainError("That customer could not be found.");

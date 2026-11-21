@@ -297,7 +297,9 @@ export async function reverseAcceptanceAction(
 export async function createLinkAction(formData: FormData): Promise<void> {
   const staff = await requireStaff(MANAGEMENT);
   const actor = await toActor(staff);
-  const id = idSchema.parse(formData.get("id"));
+  const parsed = idSchema.safeParse(formData.get("id"));
+  if (!parsed.success) redirect("/quotes");
+  const id = parsed.data;
   const replace = formData.get("replace") === "yes";
   try {
     await inTx((tx) => createQuoteLink(tx, actor, id, { replace }));
@@ -311,7 +313,9 @@ export async function createLinkAction(formData: FormData): Promise<void> {
 export async function revokeLinkAction(formData: FormData): Promise<void> {
   const staff = await requireStaff(MANAGEMENT);
   const actor = await toActor(staff);
-  const id = idSchema.parse(formData.get("id"));
+  const parsed = idSchema.safeParse(formData.get("id"));
+  if (!parsed.success) redirect("/quotes");
+  const id = parsed.data;
   try {
     await inTx((tx) => revokeQuoteLink(tx, actor, id));
   } catch (error) {

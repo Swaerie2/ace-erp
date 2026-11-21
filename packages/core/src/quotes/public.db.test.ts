@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { hashIp } from "./bots";
 import { createQuote } from "./drafts";
 import { issueQuote, reviseQuote, withdrawQuote } from "./issue";
-import { revokeQuoteLink } from "./link";
+import { createQuoteLink, revokeQuoteLink } from "./link";
 import { acceptQuote } from "./outcomes";
 import {
   acceptViaLink,
@@ -224,6 +224,21 @@ describe.skipIf(!dbTestsEnabled)("accepting and declining on the link", () => {
       expect((await acceptViaLink(tx, oldToken, input, ctx)).outcome).toBe("EXPIRED");
 
       expect((await acceptViaLink(tx, "A".repeat(43), input, ctx)).outcome).toBe("NOT_FOUND");
+    });
+  });
+
+  it("treats a revoked or replaced code as unknown for accepting and declining", async () => {
+    await withRollback(async (tx) => {
+      const q = await makeIssued(tx);
+      const oldToken = await tokenOf(tx, q.id);
+      const next = await createQuoteLink(tx, manager, q.id, { replace: true });
+      const input = { acceptedBy: "A", startDate: start(), chosenLineIds: [] };
+      expect(await acceptViaLink(tx, oldToken, input, ctx)).toEqual({ outcome: "NOT_FOUND" });
+      expect(await declineViaLink(tx, oldToken, {}, ctx)).toEqual({ outcome: "NOT_FOUND" });
+      expect((await findQuote(tx, q.id)).status).toBe("ISSUED");
+      await revokeQuoteLink(tx, manager, q.id);
+      expect(await acceptViaLink(tx, next.token, input, ctx)).toEqual({ outcome: "NOT_FOUND" });
+      expect(await declineViaLink(tx, next.token, {}, ctx)).toEqual({ outcome: "NOT_FOUND" });
     });
   });
 

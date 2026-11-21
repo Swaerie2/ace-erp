@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { clientParty, staffParty } from "../audit";
 import { dbTestsEnabled, withRollback } from "../testing/rollback";
-import { acceptCore, declineCore, QuoteExpiredError, QuoteNotIssuedError } from "./acceptance";
+import {
+  acceptCore,
+  declineCore,
+  LinkNoLongerValidError,
+  QuoteExpiredError,
+  QuoteNotIssuedError,
+} from "./acceptance";
+import { createQuoteLink } from "./link";
 import { addDays, fromDateString, todaySA } from "./reference";
 import { findQuote } from "./store";
 import { makeIssued, manager } from "./test-helpers";
@@ -139,6 +146,56 @@ describe.skipIf(!dbTestsEnabled)("the shared acceptance routine", () => {
       await expect(
         declineCore(tx, { audit: clientParty(q.customerId), declinedByClient: true }, q.id, {}),
       ).rejects.toBeInstanceOf(QuoteNotIssuedError);
+    });
+  });
+
+  it("refuses a request found by a link code that is no longer the quote's current one, and changes nothing", async () => {
+    await withRollback(async (tx) => {
+      const q = await makeIssued(tx, { status: "LEAD" });
+      const oldToken = (await findQuote(tx, q.id)).linkToken ?? "";
+      const next = await createQuoteLink(tx, manager, q.id, { replace: true });
+      const input = { acceptedBy: "A. Client", startDate: start(), chosenLineIds: [] };
+
+      await expect(
+        acceptCore(tx, { ...clientCtx(q.customerId), expectLinkToken: oldToken }, q.id, input),
+      ).rejects.toBeInstanceOf(LinkNoLongerValidError);
+      await expect(
+        declineCore(
+          tx,
+          { audit: clientParty(q.customerId), declinedByClient: true, expectLinkToken: oldToken },
+          q.id,
+          {},
+        ),
+      ).rejects.toBeInstanceOf(LinkNoLongerValidError);
+      expect(await findQuote(tx, q.id)).toMatchObject({ status: "ISSUED", acceptedAt: null });
+      expect(
+        await tx.auditLog.count({
+          where: { entityId: q.id, action: { in: ["quote.accepted", "quote.declined"] } },
+        }),
+      ).toBe(0);
+
+      // A revoked link (no code at all) is refused the same way; the current code still works.
+      await tx.quote.update({
+        where: { id: q.id },
+        data: { linkToken: null },
+        select: { id: true },
+      });
+      await expect(
+        acceptCore(tx, { ...clientCtx(q.customerId), expectLinkToken: next.token }, q.id, input),
+      ).rejects.toBeInstanceOf(LinkNoLongerValidError);
+      await tx.quote.update({
+        where: { id: q.id },
+        data: { linkToken: next.token },
+        select: { id: true },
+      });
+      const done = await acceptCore(
+        tx,
+        { ...clientCtx(q.customerId), expectLinkToken: next.token },
+        q.id,
+        input,
+      );
+      expect(done.customerFlag).toBeNull();
+      expect((await findQuote(tx, q.id)).status).toBe("ACCEPTED");
     });
   });
 });
