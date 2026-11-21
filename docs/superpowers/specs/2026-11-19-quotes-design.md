@@ -1,6 +1,8 @@
 # Module 3: Quotes (design)
 
-Status: Draft for owner review. Date: 2026-11-19.
+Status: Phase 3a implemented and verified (branch module-3-quotes); awaiting owner merge. Phase 3b (client link) not started.
+
+Date: 2026-11-19.
 
 ## Goal
 
@@ -184,13 +186,16 @@ monthly priced lines have a frequency. The unique index on (`numberYear`, `numbe
   so the original scope remains as the record.
 - An expired quote cannot be accepted; revise it to give it new dates.
 - Revising an accepted quote creates a draft for the new version; the accepted one stays accepted
-  until the revision is accepted (then it is marked as replaced like any other agreement).
-- A revision keeps the number and increases `revision`. Issuing it sets the quote it revised to
-  `REPLACED` unless that quote is `ACCEPTED` (see the agreement rule below).
+  until the revision is accepted (then its agreement is ended, see the agreement rule below).
+- A revision keeps the number and increases `revision`. When a revision is issued, only a source
+  quote that is `ISSUED` becomes `REPLACED`. A source that is `ACCEPTED`, `DECLINED` or `WITHDRAWN`
+  is left as it is.
+- A revision draft cannot be started while any draft revision exists anywhere in the same numbered
+  quote chain.
 
 ### Issue (Finish) checks, in plain words
 
-At least one service is included. At least one price line exists. Every priced or optional line has
+At least one service is included. At least one monthly or once-off price line exists (optional add-ons alone are not enough). Every priced or optional line has
 an amount above zero. Every monthly priced line has a frequency. The valid-until date is today or
 later. The property belongs to the customer and neither is archived or anonymised.
 
@@ -204,8 +209,13 @@ flagged to staff and left unchanged), and applies the **agreement rule**:
 
 > The property's **current monthly agreement** is its most recent `ACCEPTED` quote that has a
 > monthly priced line. When a new quote with a monthly priced line is accepted for the same
-> property, the earlier one gets `agreementEndedAt` and `agreementReplacedById`. Accepted once-off
-> quotes are listed separately and are never replaced.
+> property, each earlier agreement gets `agreementEndedAt` and `agreementReplacedById`, and one
+> `quote.agreement_ended` audit line is written for each. An accepted once-off quote is never ended
+> or replaced; it stays listed.
+
+Accepting, declining and reversing are refused for an anonymised customer's quote. Accepting and
+reversing take locks in the order customer, then property, then quote, so two staff accepting quotes
+for one property take turns.
 
 The property page shows the current monthly agreement (its included services, price lines and start
 date) and a list of accepted once-off quotes. This is the agreed scope that Module 6 will show crew.
@@ -273,16 +283,18 @@ owner to review):
      line exists yet, it suggests "Garden maintenance, as per scope", weekly.
   3. **Details:** valid-until, internal note.
   4. **Review:** live totals, a preview of the document, **Finish and issue**.
-     Everything saves as you go (debounced, whole draft with `draftVersion`). A visible "Saved" or
-     "Could not save, retrying" indicator shows, nothing typed is lost on a failed save, and if the
-     draft was changed from another device the person is told to reload instead of overwriting it.
+     Everything saves as you go (debounced, whole draft with `draftVersion`). The builder saves one
+     request at a time and shows a Saved, Saving or Could not save indicator. Nothing typed is lost
+     on a failed save, and it retries every 5 seconds. On a version conflict (the draft was changed
+     from another device) it stops and tells the person to reload instead of overwriting.
+     **Finish** only issues when the newest changes are saved. A never-issued draft can be deleted.
 - **Quote page** (issued and later): the document, status, a panel of the actions that apply (Mark
   as sent, Record acceptance, Decline, Withdraw, Revise, Reverse acceptance for the owner, Download
   PDF), and the history of the quote.
 - **PDF:** generated on the server with a PDF library that runs on the hosting platform without
-  extra services (React-based, with the Poppins and Inter font files bundled in the repo). The route
-  is staff-only. It shows the frozen content, never live customer data.
-- **Quote wording** page (owner only), as above, with a simple list editor for clauses (add, edit,
+  extra services (React-based). It uses the built-in Helvetica font, so no font files are bundled.
+  The route is staff-only. It shows the frozen content, never live customer data.
+- **Quote wording** page (owner only; managers cannot open it), as above, with a simple list editor for clauses (add, edit,
   reorder with up/down buttons, remove).
 
 ## Privacy and security
@@ -291,7 +303,8 @@ owner to review):
   owner only). Every core function calls `assertRole` first. Crew get no access to quotes or prices.
 - Audit lines hold field names, ids and fixed words only, never personal values or free text:
   `quote.created`, `quote.issued`, `quote.revised`, `quote.sent`, `quote.accepted`,
-  `quote.declined`, `quote.withdrawn`, `quote.reversed`, `quote.replaced`, `quote.deleted_draft`,
+  `quote.declined`, `quote.withdrawn`, `quote.reversed`, `quote.replaced`, `quote.agreement_ended`,
+  `quote.deleted_draft`,
   `quote_wording.updated`. Draft autosaves are not audited. Customer activation records
   "activated by quote acceptance".
 - **Anonymise** (owner) is extended: it wipes `recipientName`, `recipientEmail`, `recipientPhone`,
