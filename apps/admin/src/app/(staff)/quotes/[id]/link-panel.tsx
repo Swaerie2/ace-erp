@@ -28,8 +28,7 @@ export function LinkPanel({ id, url, firstViewedAt, lastViewedAt }: Props) {
             readOnly
             value={url}
             aria-label="Client link address"
-            onFocus={(event) => event.currentTarget.select()}
-            className="mt-2 block min-h-11 w-full rounded-lg border border-charcoal/20 bg-white px-3 py-2 text-sm"
+            className="mt-2 block min-h-11 w-full select-all rounded-lg border border-charcoal/20 bg-white px-3 py-2 text-sm"
           />
           <p className="mt-2 text-sm text-charcoal/70">
             {lastViewedAt
