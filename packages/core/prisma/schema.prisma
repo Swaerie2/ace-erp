@@ -1,7 +1,7 @@
 // ACE Garden Services: core database schema.
 //
-// Modules 0 to 3: organisation settings, staff users, audit log, customers, contacts, properties,
-// services, quotes, client link. Invoices arrive in Module 5, and so on.
+// Modules 0 to 4: organisation settings, staff users, audit log, customers, contacts, properties,
+// services, quotes, client link, client portal. Invoices arrive in Module 5, and so on.
 //
 // Rules for every future model:
 //   * Money is stored as whole cents (Int), never floats.
@@ -136,6 +136,10 @@ model Customer {
   consentAt           DateTime?
   consentSource       String?
   consentNote         String?
+  /// Module 4: the managing agency of this complex (an ordinary customer). One level only. Cleared on anonymise.
+  managedById         String?         @db.Uuid
+  /// Module 4: while managed, true = bills go to the agency, false = to the complex itself.
+  billsToManager      Boolean         @default(true)
   archivedAt          DateTime?
   anonymisedAt        DateTime?
   createdById         String?
@@ -146,8 +150,12 @@ model Customer {
   properties Property[]
   quotes     Quote[]
 
+  managedBy        Customer?  @relation("CustomerManagement", fields: [managedById], references: [id], onDelete: Restrict)
+  managedCustomers Customer[] @relation("CustomerManagement")
+
   @@index([displayName])
   @@index([status])
+  @@index([managedById])
   @@map("customers")
 }
 
@@ -165,10 +173,18 @@ model Contact {
   receivesInvoices Boolean  @default(true)
   /// Module 4: this contact's email becomes a client-portal login.
   portalAccess     Boolean  @default(false)
+  /// Module 4: when portal access was first given (kept after removal, so access is never silently re-granted).
+  portalInvitedAt  DateTime?
+  /// Module 4: when this person completed the portal welcome page.
+  portalWelcomedAt DateTime?
+  /// Module 4: last successful portal sign-in.
+  lastSignedInAt   DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   customer Customer @relation(fields: [customerId], references: [id])
+
+  acceptedQuotes Quote[] @relation("QuoteAcceptedByContact")
 
   @@index([customerId])
   @@index([email])
@@ -271,6 +287,7 @@ enum QuoteAcceptMethod {
   IN_PERSON
   SIGNED_COPY
   CLIENT_LINK
+  CLIENT_PORTAL
 }
 
 /// Exactly one row (id = "singleton"). The standard wording printed on quotes. Edited by the owner;
@@ -353,13 +370,18 @@ model Quote {
   lastViewedAt          DateTime?
   /// True when the decline came from the client link rather than from staff.
   declinedByClient      Boolean            @default(false)
+  /// Module 4: the signed-in contact who accepted in the portal. The agency is implied when that contact's
+  /// customer is not the quote's customer.
+  acceptedByContactId   String?            @db.Uuid
 
-  customer   Customer         @relation(fields: [customerId], references: [id])
+  customer  Customer         @relation(fields: [customerId], references: [id])
   property   Property         @relation(fields: [propertyId], references: [id])
   revisionOf Quote?           @relation("QuoteRevisions", fields: [revisionOfId], references: [id])
   revisions  Quote[]          @relation("QuoteRevisions")
   scopeItems QuoteScopeItem[]
   lines      QuoteLine[]
+
+  acceptedByContact Contact? @relation("QuoteAcceptedByContact", fields: [acceptedByContactId], references: [id], onDelete: SetNull)
 
   @@unique([numberYear, numberSeq, revision])
   @@index([customerId])
@@ -427,4 +449,39 @@ model PublicLinkHit {
 
   @@id([bucket, windowStart])
   @@map("public_link_hits")
+}
+
+/// Module 4: one-time sign-in codes for the client portal. Only a salted hash of the code is stored.
+/// `email` is personal data: rows are deleted when access is removed or the customer is anonymised.
+model PortalCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  /// Lowercase (database constraint).
+  email     String
+  codeHash  String
+  salt      String
+  expiresAt DateTime
+  attempts  Int       @default(0)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+  @@map("portal_codes")
+}
+
+/// Module 4: signed-in portal sessions. Only the SHA-256 of the random cookie value is stored.
+/// `email` is personal data: rows are deleted on sign out, access removal and anonymise.
+model PortalSession {
+  id                String   @id @default(uuid()) @db.Uuid
+  tokenHash         String   @unique
+  /// Lowercase (database constraint).
+  email             String
+  createdAt         DateTime @default(now())
+  lastSeenAt        DateTime
+  /// Sliding: 30 days after the last use, never past absoluteExpiresAt.
+  expiresAt         DateTime
+  /// 90 days after sign-in.
+  absoluteExpiresAt DateTime
+
+  @@index([email])
+  @@map("portal_sessions")
 }

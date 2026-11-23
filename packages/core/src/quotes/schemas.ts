@@ -35,7 +35,7 @@ export const SENT_METHOD_LABELS: Record<(typeof SENT_METHODS)[number], string> =
   OTHER: "Other",
 };
 export const ACCEPT_METHOD_LABELS: Record<
-  (typeof STAFF_ACCEPT_METHODS)[number] | "CLIENT_LINK",
+  (typeof STAFF_ACCEPT_METHODS)[number] | "CLIENT_LINK" | "CLIENT_PORTAL",
   string
 > = {
   WHATSAPP: "WhatsApp",
@@ -44,6 +44,7 @@ export const ACCEPT_METHOD_LABELS: Record<
   IN_PERSON: "In person",
   SIGNED_COPY: "Signed copy",
   CLIENT_LINK: "Client link",
+  CLIENT_PORTAL: "Client portal",
 };
 
 export const MAX_LINES = 30;
