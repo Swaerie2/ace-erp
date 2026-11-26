@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { emailDriver, sendEmail, type EmailMessage } from "./send";
+import { assertEmailConfigured, emailDriver, sendEmail, type EmailMessage } from "./send";
 
 const env = (values: Record<string, string>) => values as unknown as NodeJS.ProcessEnv;
 const message: EmailMessage = {
@@ -12,6 +12,17 @@ const message: EmailMessage = {
 describe("emailDriver", () => {
   it("prints to the console in development when there is no key", () => {
     expect(emailDriver(env({ NODE_ENV: "development" }))).toEqual({ kind: "console" });
+  });
+  it("prints to the console under test", () => {
+    expect(emailDriver(env({ NODE_ENV: "test" }))).toEqual({ kind: "console" });
+  });
+  it("fails loudly without a key unless NODE_ENV is development or test", () => {
+    for (const nodeEnv of [undefined, "", "staging", "Production"]) {
+      const values: Record<string, string> = nodeEnv === undefined ? {} : { NODE_ENV: nodeEnv };
+      expect(() => emailDriver(env(values)), String(nodeEnv)).toThrow(
+        "RESEND_API_KEY is not set. In production emails must be sent through Resend.",
+      );
+    }
   });
   it("fails loudly in production without a key", () => {
     expect(() => emailDriver(env({ NODE_ENV: "production" }))).toThrow(
@@ -31,6 +42,32 @@ describe("emailDriver", () => {
         }),
       ),
     ).toEqual({ kind: "resend", apiKey: "re_test", from: "ACE <noreply@example.com>" });
+  });
+});
+
+describe("assertEmailConfigured", () => {
+  it("passes in development and under test without a key", () => {
+    expect(() => assertEmailConfigured(env({ NODE_ENV: "development" }))).not.toThrow();
+    expect(() => assertEmailConfigured(env({ NODE_ENV: "test" }))).not.toThrow();
+  });
+  it("throws in production without a key or without a sender", () => {
+    expect(() => assertEmailConfigured(env({ NODE_ENV: "production" }))).toThrow(
+      "RESEND_API_KEY is not set.",
+    );
+    expect(() =>
+      assertEmailConfigured(env({ NODE_ENV: "production", RESEND_API_KEY: "re_test" })),
+    ).toThrow("EMAIL_FROM is not set.");
+  });
+  it("passes in production with a key and a sender", () => {
+    expect(() =>
+      assertEmailConfigured(
+        env({
+          NODE_ENV: "production",
+          RESEND_API_KEY: "re_test",
+          EMAIL_FROM: "ACE <noreply@example.com>",
+        }),
+      ),
+    ).not.toThrow();
   });
 });
 

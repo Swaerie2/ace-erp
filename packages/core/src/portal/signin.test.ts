@@ -39,7 +39,8 @@ describe("requestSignInCode with a plain connection", () => {
     );
     expect(result).toEqual({ outcome: "NO_MATCH" });
     expect(transactions).toBe(1);
-    expect(outer).toHaveLength(2);
+    // The hourly and daily email counts and the visitor count, all before the transaction.
+    expect(outer).toHaveLength(3);
     expect(outer.every((s) => s.includes("public_link_hits"))).toBe(true);
     expect(inner).toHaveLength(1);
     expect(inner[0]).toMatch(/for share of cu/);

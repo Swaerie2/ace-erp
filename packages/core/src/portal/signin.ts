@@ -91,7 +91,8 @@ async function lockSignInCustomers(store: Pick<Db, "$queryRaw">, email: string):
 }
 
 /**
- * Step 1 of signing in. Counts the request against the email (hashed) and the visitor (hashed) limits,
+ * Step 1 of signing in. Counts the request against the email (hashed, per hour and per day) and the
+ * visitor (hashed) limits,
  * then, only if the email belongs to a contact in scope, replaces that email's unused codes with a new one
  * and hands it to `send`. The caller shows the same reply for SENT and NO_MATCH (and both paths do the same
  * lock and visible-set reads).
@@ -113,11 +114,16 @@ export async function requestSignInCode(
     now,
     cleanup: false,
   });
+  // Checked before the scope lookup, so LIMITED never depends on whether the email is on file.
+  const byEmailDay = await checkRateLimit(store, "code-email-day", hashEmail(email), {
+    now,
+    cleanup: false,
+  });
   const byVisitor = await checkRateLimit(store, "code-ip", input.ipHash, {
     now,
     cleanup: deps.cleanup,
   });
-  if (!byEmail.allowed || !byVisitor.allowed) return { outcome: "LIMITED" };
+  if (!byEmail.allowed || !byEmailDay.allowed || !byVisitor.allowed) return { outcome: "LIMITED" };
   if (deps.cleanup ?? Math.random() < 0.01) await cleanupPortalSignIns(store, now);
 
   // The rate-limit counts above are committed on their own; the lock, the re-read and the new code are one

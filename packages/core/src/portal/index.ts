@@ -12,7 +12,7 @@ export {
 } from "./cookies";
 export { normaliseEmail } from "./email-address";
 export { needsWelcome, type PortalScope, type ScopeContact } from "./scope";
-export { sendEmail, type EmailMessage } from "./email/send";
+export { assertEmailConfigured, sendEmail, type EmailMessage } from "./email/send";
 export { signInCodeEmail, welcomeEmail } from "./email/templates";
 export type { PortalStore } from "./store";
 export {

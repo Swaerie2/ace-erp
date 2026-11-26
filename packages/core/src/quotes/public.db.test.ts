@@ -350,6 +350,27 @@ describe.skipIf(!dbTestsEnabled)("the rate limiter", () => {
     });
   });
 
+  it("keeps a rate-limit window for two days before cleaning it up", async () => {
+    await withRollback(async (tx) => {
+      const hashed = hashIp("198.51.100.78");
+      const bucket = `code-email-day:${hashed}`;
+      const at = (iso: string) => new Date(iso);
+      // A day window opened at the start of 23 Nov and one at the start of 21 Nov.
+      await checkRateLimit(tx, "code-email-day", hashed, { now: at("2026-11-23T10:00:00Z") });
+      await checkRateLimit(tx, "code-email-day", hashed, { now: at("2026-11-21T10:00:00Z") });
+      // Cleaning up late on 24 Nov (the 23 Nov window began 24h+ ago) must keep it; 21 Nov goes.
+      await checkRateLimit(tx, "view", hashed, {
+        now: at("2026-11-24T23:00:00Z"),
+        cleanup: true,
+      });
+      const rows = await tx.publicLinkHit.findMany({
+        where: { bucket },
+        select: { windowStart: true },
+      });
+      expect(rows.map((r) => r.windowStart.toISOString())).toEqual(["2026-11-23T00:00:00.000Z"]);
+    });
+  });
+
   it("clears windows older than a day when it cleans up, and never stores the address", async () => {
     await withRollback(async (tx) => {
       const ip = "198.51.100.77";

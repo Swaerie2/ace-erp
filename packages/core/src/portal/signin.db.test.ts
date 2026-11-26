@@ -269,6 +269,54 @@ describe.skipIf(!dbTestsEnabled)("portal sign-in, run as ace_portal", () => {
     });
   });
 
+  it("limits code requests to 10 per email per day even when the hourly limit is never reached", async () => {
+    await withRollback(async (tx) => {
+      const client = await makeClient(tx);
+      const box = mailbox();
+      const unknown = `${randomUUID()}@example.com`;
+      const day = new Date("2026-11-23T00:00:00.000Z").getTime();
+      const at = (hour: number) => new Date(day + hour * 60 * MIN + 5 * MIN);
+      const ask = (email: string, now: Date) =>
+        asPortal(tx, () =>
+          requestSignInCode(
+            tx,
+            { email, ipHash: visitor() },
+            { send: box.send, now, cleanup: false },
+          ),
+        );
+      // 3 + 3 + 3 + 1 across four different hours: each hour stays within its 3.
+      for (const [hour, times] of [
+        [1, 3],
+        [2, 3],
+        [3, 3],
+        [4, 1],
+      ] as const) {
+        for (let i = 0; i < times; i++) {
+          expect((await ask(client.email, at(hour))).outcome, `hour ${hour}`).toBe("SENT");
+        }
+      }
+      expect(box.sent).toHaveLength(10);
+      // The 11th of the day is refused although this hour has had no request yet.
+      expect(await ask(client.email, at(5))).toEqual({ outcome: "LIMITED" });
+      expect(box.sent).toHaveLength(10);
+      // The next day starts fresh.
+      expect((await ask(client.email, new Date(day + DAY + 60 * MIN))).outcome).toBe("SENT");
+
+      // Same answer for an email that is not on file: the limit does not depend on it.
+      for (let i = 0; i < 10; i++) {
+        expect((await ask(unknown, at(6 + Math.floor(i / 3)))).outcome).toBe("NO_MATCH");
+      }
+      expect(await ask(unknown, at(12))).toEqual({ outcome: "LIMITED" });
+
+      const buckets = await tx.publicLinkHit.findMany({
+        where: { bucket: { startsWith: "code-email-day:" } },
+        select: { bucket: true },
+      });
+      expect(buckets.length).toBeGreaterThan(0);
+      expect(JSON.stringify(buckets)).not.toContain(client.email);
+    });
+  });
+
   it("ends a session at once when access is removed, or the customer is archived or anonymised", async () => {
     await withRollback(async (tx) => {
       const removed = await makeClient(tx);

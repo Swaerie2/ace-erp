@@ -355,7 +355,8 @@ export async function checkRateLimit(
   const count = Number(rows[0]?.count ?? 1);
   if (opts.cleanup ?? Math.random() < 0.01) {
     await store.publicLinkHit.deleteMany({
-      where: { windowStart: { lt: new Date(now.getTime() - 24 * 60 * 60 * 1000) } },
+      // Two days, not one: the daily sign-in window is a day long, so it stays until well after it ends.
+      where: { windowStart: { lt: new Date(now.getTime() - 48 * 60 * 60 * 1000) } },
     });
   }
   return { allowed: count <= rule.limit };
