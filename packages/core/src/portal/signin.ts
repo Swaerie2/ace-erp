@@ -94,7 +94,12 @@ async function lockSignInCustomers(store: Pick<Db, "$queryRaw">, email: string):
  * Step 1 of signing in. Counts the request against the email (hashed) and the visitor (hashed) limits,
  * then, only if the email belongs to a contact in scope, replaces that email's unused codes with a new one
  * and hands it to `send`. The caller shows the same reply for SENT and NO_MATCH (and both paths do the same
- * lock and visible-set reads; the email is sent by the caller after the reply).
+ * lock and visible-set reads).
+ *
+ * `deps.send` is awaited before SENT is returned, so it must only QUEUE the message and return at once
+ * (in the portal: Next.js `after()`, which sends once the reply has gone). Actually sending inside it would
+ * make SENT slower than NO_MATCH and show that the email is on file. `send` owns its own try/catch and logs
+ * fixed words only (never the error or the address); the catch below is only a safety net.
  */
 export async function requestSignInCode(
   store: PortalStore,
@@ -146,15 +151,32 @@ export async function requestSignInCode(
   return { outcome: "SENT" };
 }
 
+/**
+ * The answer to a code check. ALL failures are intentionally ONE outcome, `INVALID`: no code for the email
+ * (including an email that is not on file), a wrong, malformed, used, expired or dead code, and access
+ * removed since the code was sent. Telling these apart would show whether an email is on file. The portal
+ * must show the same text and the same next step for every `INVALID`.
+ * `LIMITED` depends only on the visitor: this function never returns it; it is the portal's answer when its
+ * own "act" rate-limit check (run before calling this) refuses the try, so one type covers the code page.
+ */
 export type VerifyResult =
   | { outcome: "OK"; token: string; expiresAt: Date; needsWelcome: boolean }
-  | { outcome: "WRONG" }
-  | { outcome: "EXPIRED" };
+  | { outcome: "INVALID" }
+  | { outcome: "LIMITED" };
+
+const INVALID: VerifyResult = { outcome: "INVALID" };
+// Compared against when there is no code row, so that case does the same hashing work as a real check.
+const DUMMY_SALT = "0".repeat(32);
+const DUMMY_HASH = hashSignInCode("no code", DUMMY_SALT);
+// Never a real row id: the "no code" case still runs the reserve statement, for similar work.
+const NO_ROW_ID = "00000000-0000-0000-0000-000000000000";
 
 /**
- * Step 2 of signing in. Checks the email's latest unused code (constant-time), counts a wrong try (the
- * fifth kills the code), claims the code with one conditional statement (single use), and makes a new
- * session with a fresh random token. Returns the raw token for the cookie; only its hash is stored.
+ * Step 2 of signing in. Takes the email's newest unused code and first RESERVES one try with a single
+ * conditional statement (only while fewer than five tries were counted and the code is live), and only
+ * then compares (constant-time). So each code is compared at most five times, however many guesses arrive
+ * at once. A match claims the code with one conditional statement (single use) and makes a new session
+ * with a fresh random token. Returns the raw token for the cookie; only its hash is stored.
  */
 export async function verifySignInCode(
   store: PortalStore,
@@ -163,40 +185,38 @@ export async function verifySignInCode(
 ): Promise<VerifyResult> {
   const email = normaliseEmail(input.email);
   const code = input.code.replace(/\s/g, "");
-  if (!email || !isSignInCodeShape(code)) return { outcome: "WRONG" };
+  // Depends only on what was typed, so it reveals nothing about the email.
+  if (!email || !isSignInCodeShape(code)) return INVALID;
   const row = await store.portalCode.findFirst({
     where: { email, usedAt: null },
-    orderBy: { createdAt: "desc" },
-    select: { id: true, codeHash: true, salt: true, expiresAt: true, attempts: true },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { id: true, codeHash: true, salt: true },
   });
-  if (!row || row.expiresAt.getTime() <= now.getTime() || row.attempts >= MAX_CODE_ATTEMPTS) {
-    return { outcome: "EXPIRED" };
-  }
-  if (!signInCodeMatches(code, row.salt, row.codeHash)) {
-    await store.portalCode.updateMany({
-      where: { id: row.id, usedAt: null },
-      data: { attempts: { increment: 1 } },
-    });
-    return { outcome: row.attempts + 1 >= MAX_CODE_ATTEMPTS ? "EXPIRED" : "WRONG" };
-  }
+  const reserved = await store.portalCode.updateMany({
+    where: {
+      id: row?.id ?? NO_ROW_ID,
+      usedAt: null,
+      attempts: { lt: MAX_CODE_ATTEMPTS },
+      expiresAt: { gt: now },
+    },
+    data: { attempts: { increment: 1 } },
+  });
+  const matches = signInCodeMatches(code, row?.salt ?? DUMMY_SALT, row?.codeHash ?? DUMMY_HASH);
+  if (!row || reserved.count !== 1 || !matches) return INVALID;
   // One transaction: lock the customers FIRST (lock order, and anonymise locks the customer before it
   // deletes codes: claiming the code row before the customer lock could deadlock with it), then claim the
   // code, re-read the visible set and make the session.
   return inOneTransaction(store, async (tx): Promise<VerifyResult> => {
     await lockSignInCustomers(tx, email);
+    // No attempts condition: this try was already reserved and counted (it may have been the fifth).
     const claimed = await tx.portalCode.updateMany({
-      where: {
-        id: row.id,
-        usedAt: null,
-        attempts: { lt: MAX_CODE_ATTEMPTS },
-        expiresAt: { gt: now },
-      },
+      where: { id: row.id, usedAt: null, expiresAt: { gt: now } },
       data: { usedAt: now },
     });
-    if (claimed.count !== 1) return { outcome: "EXPIRED" };
+    if (claimed.count !== 1) return INVALID;
     // Access may have been removed since the code was sent.
     const scope = await loadPortalScope(tx, email);
-    if (!scope) return { outcome: "EXPIRED" };
+    if (!scope) return INVALID;
 
     const token = generateSessionToken();
     const times = newSessionTimes(now);

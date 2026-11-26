@@ -7,6 +7,7 @@ import { hashIp } from "../quotes/bots";
 import { owner } from "../quotes/test-helpers";
 import { dbTestsEnabled, withRollback } from "../testing/rollback";
 import { hashSignInCode, newCodeSalt } from "./codes";
+import { loadPortalScope } from "./scope";
 import { hashSessionToken } from "./session-token";
 import {
   cleanupPortalSignIns,
@@ -91,7 +92,7 @@ describe.skipIf(!dbTestsEnabled)("portal sign-in, run as ace_portal", () => {
         expect(
           await asPortal(tx, () => verifySignInCode(tx, { email: client.email, code: first })),
         ).toEqual({
-          outcome: "WRONG",
+          outcome: "INVALID",
         });
       }
     });
@@ -136,7 +137,7 @@ describe.skipIf(!dbTestsEnabled)("portal sign-in, run as ace_portal", () => {
 
       expect(await asPortal(tx, () => verifySignInCode(tx, { email: client.email, code }))).toEqual(
         {
-          outcome: "EXPIRED",
+          outcome: "INVALID",
         },
       );
 
@@ -168,18 +169,18 @@ describe.skipIf(!dbTestsEnabled)("portal sign-in, run as ace_portal", () => {
         expect(
           await asPortal(tx, () => verifySignInCode(tx, { email: client.email, code: wrong })),
         ).toEqual({
-          outcome: "WRONG",
+          outcome: "INVALID",
         });
       }
       // the fifth wrong try kills the code, and then even the right code fails
       expect(
         await asPortal(tx, () => verifySignInCode(tx, { email: client.email, code: wrong })),
       ).toEqual({
-        outcome: "EXPIRED",
+        outcome: "INVALID",
       });
       expect(await asPortal(tx, () => verifySignInCode(tx, { email: client.email, code }))).toEqual(
         {
-          outcome: "EXPIRED",
+          outcome: "INVALID",
         },
       );
       expect(
@@ -204,11 +205,11 @@ describe.skipIf(!dbTestsEnabled)("portal sign-in, run as ace_portal", () => {
             new Date(t0.getTime() + 10 * MIN),
           ),
         ),
-      ).toEqual({ outcome: "EXPIRED" });
+      ).toEqual({ outcome: "INVALID" });
       expect(
         await asPortal(tx, () => verifySignInCode(tx, { email: client.email, code: "12ab56" })),
       ).toEqual({
-        outcome: "WRONG",
+        outcome: "INVALID",
       });
     });
   });
@@ -347,6 +348,103 @@ describe.skipIf(!dbTestsEnabled)("portal sign-in, run as ace_portal", () => {
       expect(
         await asPortal(tx, () => getPortalSession(tx, undefined, { cleanup: false })),
       ).toBeNull();
+    });
+  });
+
+  it("checks at most five guesses per code even when twenty arrive at once, and then refuses the right code", async () => {
+    await withRollback(async (tx) => {
+      const client = await makeClient(tx);
+      const code = "246810";
+      const salt = newCodeSalt();
+      await tx.portalCode.create({
+        data: {
+          email: client.email,
+          codeHash: hashSignInCode(code, salt),
+          salt,
+          expiresAt: new Date(Date.now() + 10 * MIN),
+        },
+      });
+      const wrong = Array.from({ length: 20 }, (_, i) => String(100000 + i));
+      // Started together: every call reads the code row before any of them writes, which is the window a
+      // read-compare-then-count design loses. One connection runs the statements one after another, so this
+      // is the same interleaving parallel requests would produce, minus true simultaneity (see the report).
+      const results = await asPortal(tx, () =>
+        Promise.all([
+          ...wrong.map((guess) => verifySignInCode(tx, { email: client.email, code: guess })),
+          verifySignInCode(tx, { email: client.email, code }),
+        ]),
+      );
+      expect(new Set(results.map((r) => r.outcome))).toEqual(new Set(["INVALID"]));
+      // Each counted try is one comparison; the count is reserved before comparing, so it stops at five.
+      const row = await tx.portalCode.findFirstOrThrow({
+        where: { email: client.email },
+        select: { attempts: true, usedAt: true },
+      });
+      expect(row).toEqual({ attempts: 5, usedAt: null });
+      expect(await asPortal(tx, () => verifySignInCode(tx, { email: client.email, code }))).toEqual(
+        { outcome: "INVALID" },
+      );
+      expect(await tx.portalSession.count({ where: { email: client.email } })).toBe(0);
+    });
+  });
+
+  it("answers no code, a wrong code, a used code and a dead code with the same outcome", async () => {
+    await withRollback(async (tx) => {
+      const client = await makeClient(tx);
+      const unknown = `${randomUUID()}@example.com`;
+      const noCode = await asPortal(tx, () =>
+        verifySignInCode(tx, { email: unknown, code: "123456" }),
+      );
+      const box = mailbox();
+      await asPortal(tx, () =>
+        requestSignInCode(
+          tx,
+          { email: client.email, ipHash: visitor() },
+          { send: box.send, cleanup: false },
+        ),
+      );
+      const right = box.sent[0]!.code;
+      const wrongCode = right === "000000" ? "111111" : "000000";
+      const wrong = await asPortal(tx, () =>
+        verifySignInCode(tx, { email: client.email, code: wrongCode }),
+      );
+      expect(
+        (await asPortal(tx, () => verifySignInCode(tx, { email: client.email, code: right })))
+          .outcome,
+      ).toBe("OK");
+      const used = await asPortal(tx, () =>
+        verifySignInCode(tx, { email: client.email, code: right }),
+      );
+      for (const r of [noCode, wrong, used]) expect(r).toEqual({ outcome: "INVALID" });
+    });
+  });
+
+  it("shows an agency its live complexes only, and a complex never sees the agency's other complexes", async () => {
+    await withRollback(async (tx) => {
+      const agency = await makeClient(tx, { name: `ZZ E2E Agency ${randomUUID().slice(0, 8)}` });
+      const live = await makeClient(tx, { managedById: agency.customerId });
+      const other = await makeClient(tx, { managedById: agency.customerId });
+      const archived = await makeClient(tx, { managedById: agency.customerId });
+      const anonymised = await makeClient(tx, { managedById: agency.customerId });
+      await tx.customer.update({
+        where: { id: archived.customerId },
+        data: { status: "ARCHIVED", archivedAt: new Date() },
+      });
+      await tx.customer.update({
+        where: { id: anonymised.customerId },
+        data: { anonymisedAt: new Date() },
+      });
+
+      const ofAgency = await asPortal(tx, () => loadPortalScope(tx, agency.email));
+      expect(ofAgency?.ownCustomerIds).toEqual([agency.customerId]);
+      expect(ofAgency?.managedCustomerIds).toEqual([live.customerId, other.customerId].sort());
+      expect(ofAgency?.customerIds).toEqual(
+        [agency.customerId, live.customerId, other.customerId].sort(),
+      );
+
+      const ofComplex = await asPortal(tx, () => loadPortalScope(tx, live.email));
+      expect(ofComplex?.customerIds).toEqual([live.customerId]);
+      expect(ofComplex?.managedCustomerIds).toEqual([]);
     });
   });
 
@@ -563,7 +661,7 @@ describe.skipIf(!dbTestsEnabled)("portal sign-in against a concurrent anonymise"
       });
       expect(
         await asPortal(tx, () => verifySignInCode(tx, { email: client.email, code: "654321" })),
-      ).toEqual({ outcome: "EXPIRED" });
+      ).toEqual({ outcome: "INVALID" });
       expect(await tx.portalSession.count({ where: { email: client.email } })).toBe(0);
     });
   });
