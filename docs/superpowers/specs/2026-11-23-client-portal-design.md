@@ -1,6 +1,6 @@
 # Module 4: Client portal, sign-in and managing agencies
 
-Status: design approved by the owner in three parts (2026-11-23), written spec awaiting review.
+Status: Implemented, browser check pending (branch module-4-client-portal). Design approved by the owner in three parts (2026-11-23).
 
 ## Goal
 
