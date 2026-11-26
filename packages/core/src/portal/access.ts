@@ -93,7 +93,10 @@ export async function grantAccessAfterAcceptance(
 
 /**
  * Sends the welcome email to each invite and notes the result in the audit log with fixed words only.
- * An email failure never throws: staff can press Invite to portal to send it again.
+ * An email failure never throws: staff can press Invite to portal to send it again. Neither does a failed
+ * audit write: it is logged with fixed words and the remaining emails still go.
+ * Staff-side only (and the after-acceptance grant): call only after requireStaff / a role check, with
+ * invites returned by `inviteContact` or the grant.
  */
 export async function sendWelcomeEmails(
   store: Pick<Db, "auditLog">,
@@ -115,13 +118,18 @@ export async function sendWelcomeEmails(
     }
     if (ok) sent += 1;
     else failed += 1;
-    await logCustomerEventAs(
-      store,
-      SYSTEM,
-      ok ? "portal.invite_sent" : "portal.invite_failed",
-      invite.customerId,
-      { contactId: invite.contactId },
-    );
+    try {
+      await logCustomerEventAs(
+        store,
+        SYSTEM,
+        ok ? "portal.invite_sent" : "portal.invite_failed",
+        invite.customerId,
+        { contactId: invite.contactId },
+      );
+    } catch {
+      // One failed audit write must not stop the remaining emails. Fixed words only.
+      console.error("A portal welcome email result could not be written to the audit log.");
+    }
   }
   return { sent, failed };
 }
@@ -143,7 +151,14 @@ export async function grantPortalAccess(
 async function readContact(store: Store, contactId: string) {
   const c = await store.contact.findUnique({
     where: { id: contactId },
-    select: { id: true, customerId: true, name: true, email: true, portalAccess: true },
+    select: {
+      id: true,
+      customerId: true,
+      name: true,
+      email: true,
+      portalAccess: true,
+      portalInvitedAt: true,
+    },
   });
   if (!c) throw new DomainError(PORTAL_ACCESS_MESSAGES.missing);
   return c;
@@ -201,9 +216,11 @@ export async function removeContactAccess(
   await lockCustomer(store, first.customerId);
   const c = await readContact(store, contactId);
   if (!c.portalAccess) return;
+  // A contact given access before invitation dates were kept (the old contact-form tick) has none: set one
+  // now, so the next acceptance never silently gives the access back.
   await store.contact.update({
     where: { id: c.id },
-    data: { portalAccess: false },
+    data: { portalAccess: false, portalInvitedAt: c.portalInvitedAt ?? new Date() },
     select: { id: true },
   });
   const ended = c.email ? await endPortalSignIns(store, [c.email], [c.id]) : 0;

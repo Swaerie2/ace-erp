@@ -266,6 +266,24 @@ describe.skipIf(!dbTestsEnabled)("portal access", () => {
         signInsEnded: true,
       });
 
+      // A contact given access before invitation dates were kept (the old contact-form tick) has access
+      // but no invitation date. Removing its access must still stop the next acceptance re-granting it.
+      const legacy = await tx.contact.create({
+        data: {
+          customerId: a.customerId,
+          name: "ZZ E2E Legacy Access",
+          email: `${randomUUID()}@example.com`,
+          receivesQuotes: true,
+          portalAccess: true,
+          portalInvitedAt: null,
+        },
+        select: { id: true },
+      });
+      await removeContactAccess(tx, manager, legacy.id);
+      const legacyRow = await tx.contact.findUniqueOrThrow({ where: { id: legacy.id } });
+      expect(legacyRow.portalAccess).toBe(false);
+      expect(legacyRow.portalInvitedAt).toBeInstanceOf(Date);
+
       // A later acceptance does not give access back to someone who was removed.
       const q = await issueFor(tx, a);
       await staffAccept(tx, q);
@@ -274,9 +292,14 @@ describe.skipIf(!dbTestsEnabled)("portal access", () => {
         sent: 0,
         failed: 0,
       });
+      expect(box.sent).toEqual([]);
       expect(
         (await tx.contact.findUniqueOrThrow({ where: { id: a.contactId } })).portalAccess,
       ).toBe(false);
+      expect((await tx.contact.findUniqueOrThrow({ where: { id: legacy.id } })).portalAccess).toBe(
+        false,
+      );
+      expect(await customerAudit(tx, a.customerId, "customer.portal_access_granted")).toEqual([]);
     });
   });
 

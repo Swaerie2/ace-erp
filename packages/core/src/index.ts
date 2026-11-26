@@ -21,6 +21,7 @@ export {
   grantPortalAccess,
   inviteContact,
   removeContactAccess,
+  // Staff-side only: call only after requireStaff / a role check.
   sendWelcomeEmails,
   type InviteDeps,
   type PortalInvite,
