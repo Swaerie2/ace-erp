@@ -23,3 +23,5 @@ export {
   type SignInCodeMessage,
   type VerifyResult,
 } from "./signin";
+export { welcomeSchema, type WelcomeInput } from "./welcome-schema";
+export { WELCOME_GONE, completeWelcome, getWelcomeStep, type WelcomeStep } from "./welcome";
