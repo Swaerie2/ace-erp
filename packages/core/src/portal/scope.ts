@@ -1,3 +1,5 @@
+import type { Db } from "../db";
+
 declare const SCOPE_BRAND: unique symbol;
 
 /** One contact the signed-in email belongs to (portal access on, customer neither archived nor anonymised). */
@@ -65,4 +67,41 @@ export function pickActingContact(
   if (!quoteCustomer.managedById) return null;
   const agency = scope.contacts.find((c) => c.customerId === quoteCustomer.managedById);
   return agency ? { contactId: agency.id, customerId: agency.customerId, forAgency: true } : null;
+}
+
+/**
+ * The visible set for a signed-in email, from live data: contacts with that email and portal access whose
+ * customer is neither archived nor anonymised, plus the customers those customers manage (also neither
+ * archived nor anonymised). Reads only columns the `ace_portal` role is granted.
+ */
+export async function loadPortalScope(
+  store: Pick<Db, "contact" | "customer">,
+  email: string,
+): Promise<PortalScope | null> {
+  const contacts = await store.contact.findMany({
+    where: {
+      email,
+      portalAccess: true,
+      customer: { status: { not: "ARCHIVED" }, anonymisedAt: null },
+    },
+    orderBy: { id: "asc" },
+    select: { id: true, customerId: true, name: true, portalWelcomedAt: true },
+  });
+  if (contacts.length === 0) return null;
+  const own = [...new Set(contacts.map((c) => c.customerId))];
+  const managed = await store.customer.findMany({
+    where: { managedById: { in: own }, status: { not: "ARCHIVED" }, anonymisedAt: null },
+    orderBy: { id: "asc" },
+    select: { id: true, managedById: true },
+  });
+  return buildScope(
+    email,
+    contacts.map((c) => ({
+      id: c.id,
+      customerId: c.customerId,
+      name: c.name,
+      welcomed: c.portalWelcomedAt !== null,
+    })),
+    managed.flatMap((m) => (m.managedById ? [{ id: m.id, managedById: m.managedById }] : [])),
+  );
 }

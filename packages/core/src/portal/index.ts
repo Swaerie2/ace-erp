@@ -12,3 +12,14 @@ export { normaliseEmail } from "./email-address";
 export { needsWelcome, type PortalScope, type ScopeContact } from "./scope";
 export { sendEmail, type EmailMessage } from "./email/send";
 export { signInCodeEmail, welcomeEmail } from "./email/templates";
+export type { PortalStore } from "./store";
+export {
+  getPortalSession,
+  requestSignInCode,
+  signOut,
+  verifySignInCode,
+  type PortalSession,
+  type RequestCodeOutcome,
+  type SignInCodeMessage,
+  type VerifyResult,
+} from "./signin";
