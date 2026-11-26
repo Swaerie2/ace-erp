@@ -169,7 +169,7 @@ describe.skipIf(!dbTestsEnabled)("accepting and declining on the link", () => {
         { acceptedBy: "A. Client", startDate: start(), chosenLineIds: [optionId] },
         ctx,
       );
-      expect(result).toEqual({ outcome: "ACCEPTED", customerFlag: null });
+      expect(result).toEqual({ outcome: "ACCEPTED", customerFlag: null, quoteId: id });
       const after = await findQuote(tx, id);
       expect(after).toMatchObject({
         status: "ACCEPTED",
@@ -262,7 +262,7 @@ describe.skipIf(!dbTestsEnabled)("accepting and declining on the link", () => {
         { acceptedBy: "A", startDate: start(), chosenLineIds: [] },
         ctx,
       );
-      expect(result).toEqual({ outcome: "ACCEPTED", customerFlag: "PAUSED" });
+      expect(result).toEqual({ outcome: "ACCEPTED", customerFlag: "PAUSED", quoteId: q.id });
       expect((await tx.customer.findUniqueOrThrow({ where: { id: q.customerId } })).status).toBe(
         "PAUSED",
       );

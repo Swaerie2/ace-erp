@@ -533,7 +533,7 @@ describe.skipIf(!dbTestsEnabled)("the public functions run as ace_portal", () =>
         { acceptedBy: "A. Client", startDate: start(), chosenLineIds: [optionId] },
         ctx,
       );
-      expect(result).toEqual({ outcome: "ACCEPTED", customerFlag: null });
+      expect(result).toEqual({ outcome: "ACCEPTED", customerFlag: null, quoteId: q.id });
       // The accepted-state read (who accepted, the start date, the chosen add-on) also works as the role.
       const accepted = await getPublicQuote(tx, token);
       expect(accepted.found && accepted.state).toBe("ACCEPTED");

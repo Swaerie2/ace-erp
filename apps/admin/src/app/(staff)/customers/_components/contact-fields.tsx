@@ -53,12 +53,6 @@ export function ContactFields({ values: v, errors: e, prefix = "" }: Props) {
           name={n("receivesInvoices")}
           defaultChecked={v[n("receivesInvoices")] === "on"}
         />
-        <CheckboxField
-          label="Can use the client portal"
-          name={n("portalAccess")}
-          defaultChecked={v[n("portalAccess")] === "on"}
-          hint="Their email becomes their login when the portal opens."
-        />
       </div>
     </div>
   );

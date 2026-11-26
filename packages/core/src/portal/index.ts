@@ -41,3 +41,4 @@ export {
   type PortalQuoteState,
   type PortalQuoteSummary,
 } from "./home";
+export { grantPortalAccess, type InviteDeps, type TxRunner } from "./access";

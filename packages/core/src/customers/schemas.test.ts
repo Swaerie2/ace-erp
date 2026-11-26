@@ -68,11 +68,12 @@ describe("contactSchema", () => {
     const r = contactSchema.safeParse({ name: "Sam" });
     expect(r.success).toBe(false);
   });
-  it("rejects a bad phone and portal access without an email", () => {
+  it("rejects a bad phone", () => {
     expect(contactSchema.safeParse({ name: "Sam", phone: "12" }).success).toBe(false);
-    expect(
-      contactSchema.safeParse({ name: "Sam", phone: "0821234567", portalAccess: "on" }).success,
-    ).toBe(false);
+  });
+  it("no longer carries portal access (staff change it with Invite and Remove)", () => {
+    const parsed = contactSchema.parse({ name: "Sam", phone: "0821234567", portalAccess: "on" });
+    expect("portalAccess" in parsed).toBe(false);
   });
 });
 

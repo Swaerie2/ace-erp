@@ -29,7 +29,6 @@ export function contactData(c: ContactInput) {
     phone: c.phone ?? null,
     receivesQuotes: c.receivesQuotes,
     receivesInvoices: c.receivesInvoices,
-    portalAccess: c.portalAccess,
   };
 }
 

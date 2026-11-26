@@ -22,7 +22,6 @@ function toRow(c: Customer["contacts"][number]): ContactRow {
     phone: c.phone,
     receivesQuotes: c.receivesQuotes,
     receivesInvoices: c.receivesInvoices,
-    portalAccess: c.portalAccess,
   };
 }
 

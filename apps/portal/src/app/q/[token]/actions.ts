@@ -12,6 +12,7 @@ import {
 } from "@ace/core";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { grantPortalAccessLater } from "@/lib/portal-access";
 import { getVisitor, type Visitor } from "@/lib/visitor";
 import type { FormState } from "./form-state";
 
@@ -88,8 +89,9 @@ export async function acceptAction(
       nonce: Date.now(),
     };
   }
+  let result: Awaited<ReturnType<typeof acceptViaLink>>;
   try {
-    await inPortalTx((tx) =>
+    result = await inPortalTx((tx) =>
       acceptViaLink(tx, token, parsed.data, {
         ip: guarded.visitor.ip,
         userAgent: guarded.visitor.userAgent,
@@ -100,6 +102,8 @@ export async function acceptAction(
     if (error instanceof DomainError) return { error: error.message, values, nonce: Date.now() };
     throw error;
   }
+  // The acceptance has committed: portal access and the welcome emails follow after the response.
+  if (result.outcome === "ACCEPTED") grantPortalAccessLater(result.quoteId);
   return backToPage(token);
 }
 

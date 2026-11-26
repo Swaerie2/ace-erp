@@ -16,6 +16,16 @@ export {
   type CustomerHierarchy,
   type HierarchyMessageKey,
 } from "./portal/hierarchy";
+export {
+  PORTAL_ACCESS_MESSAGES,
+  grantPortalAccess,
+  inviteContact,
+  removeContactAccess,
+  sendWelcomeEmails,
+  type InviteDeps,
+  type PortalInvite,
+  type TxRunner,
+} from "./portal/access";
 export { recordAudit } from "./audit";
 export type { AuditEntry } from "./audit";
 export { computeTotals, formatZAR, randToCents, sumCents } from "./money";

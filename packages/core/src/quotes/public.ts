@@ -237,7 +237,7 @@ export type LinkDeclineInput = z.output<typeof linkDeclineSchema>;
 export type LinkContext = { ip: string | null; userAgent: string | null };
 
 export type LinkAcceptResult =
-  | { outcome: "ACCEPTED"; customerFlag: "PAUSED" | "ARCHIVED" | null }
+  | { outcome: "ACCEPTED"; customerFlag: "PAUSED" | "ARCHIVED" | null; quoteId: string }
   | { outcome: "ALREADY_ACCEPTED" }
   | { outcome: "EXPIRED" }
   | { outcome: "NOT_AVAILABLE" }
@@ -272,7 +272,7 @@ export async function acceptViaLink(
       found.id,
       input,
     );
-    return { outcome: "ACCEPTED", customerFlag };
+    return { outcome: "ACCEPTED", customerFlag, quoteId: found.id };
   } catch (error) {
     if (error instanceof LinkNoLongerValidError) return { outcome: "NOT_FOUND" };
     if (error instanceof QuoteExpiredError) return { outcome: "EXPIRED" };
