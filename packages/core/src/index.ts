@@ -3,6 +3,8 @@ export * from "./portal-db";
 export type { Db } from "./db";
 export { getDatabaseUrl, requireEnv } from "./env";
 export { getPortalBaseUrl, portalSignInUrl } from "./portal/config";
+export { sendEmail, type EmailMessage } from "./portal/email/send";
+export { signInCodeEmail, welcomeEmail } from "./portal/email/templates";
 export { recordAudit } from "./audit";
 export type { AuditEntry } from "./audit";
 export { computeTotals, formatZAR, randToCents, sumCents } from "./money";
