@@ -14,3 +14,12 @@ export function portalCookieNames(
 
 /** The typed email is remembered between the two sign-in pages for this long. */
 export const PENDING_EMAIL_MAX_AGE_SECONDS = 15 * 60;
+
+export type PortalCookieOptions = { httpOnly: true; secure: boolean; sameSite: "lax"; path: "/" };
+
+/** Every portal cookie: never readable by page scripts, sent on top-level navigation, whole site. */
+export function portalCookieOptions(
+  nodeEnv: string | undefined = process.env.NODE_ENV,
+): PortalCookieOptions {
+  return { httpOnly: true, secure: nodeEnv === "production", sameSite: "lax", path: "/" };
+}

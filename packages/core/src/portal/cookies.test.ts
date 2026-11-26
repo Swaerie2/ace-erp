@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PENDING_EMAIL_MAX_AGE_SECONDS, portalCookieNames } from "./cookies";
+import { PENDING_EMAIL_MAX_AGE_SECONDS, portalCookieNames, portalCookieOptions } from "./cookies";
 
 describe("portal cookie names", () => {
   it("use the __Host- prefix in production only", () => {
@@ -15,5 +15,22 @@ describe("portal cookie names", () => {
   });
   it("keep the typed email for fifteen minutes", () => {
     expect(PENDING_EMAIL_MAX_AGE_SECONDS).toBe(900);
+  });
+});
+
+describe("portal cookie options", () => {
+  it("are HTTP-only, same-site lax, path / always, and secure in production", () => {
+    expect(portalCookieOptions("production")).toEqual({
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      path: "/",
+    });
+    expect(portalCookieOptions("development")).toEqual({
+      httpOnly: true,
+      secure: false,
+      sameSite: "lax",
+      path: "/",
+    });
   });
 });

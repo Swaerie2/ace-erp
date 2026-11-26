@@ -6,7 +6,9 @@ export { getPortalBaseUrl, portalSignInUrl } from "./config";
 export {
   PENDING_EMAIL_MAX_AGE_SECONDS,
   portalCookieNames,
+  portalCookieOptions,
   type PortalCookieNames,
+  type PortalCookieOptions,
 } from "./cookies";
 export { normaliseEmail } from "./email-address";
 export { needsWelcome, type PortalScope, type ScopeContact } from "./scope";

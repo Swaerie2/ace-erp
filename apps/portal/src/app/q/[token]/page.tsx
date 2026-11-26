@@ -3,10 +3,11 @@ import { QuoteDocumentView } from "@ace/ui/quote-document";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { BarePage, Contact, Notice, PageShell, TooManyRequests } from "@/components/notices";
+import { AcceptForm } from "@/components/quote-forms/accept-form";
+import { DeclineForm } from "@/components/quote-forms/decline-form";
 import { getVisitor } from "@/lib/visitor";
-import { AcceptForm } from "./accept-form";
-import { DeclineForm } from "./decline-form";
-import { BarePage, Contact, Notice, PageShell, TooManyRequests } from "./notices";
+import { acceptAction, declineAction } from "./actions";
 
 // Titles and descriptions never hold customer details.
 export const metadata: Metadata = {
@@ -113,12 +114,12 @@ export default async function QuoteLinkPage({ params }: { params: Promise<{ toke
             </a>
           </p>
           <AcceptForm
-            token={token}
+            action={acceptAction.bind(null, token)}
             reference={quote.reference}
             optionalLines={quote.optionalLines}
             today={todaySA()}
           />
-          <DeclineForm token={token} />
+          <DeclineForm action={declineAction.bind(null, token)} />
         </PageShell>
       );
   }
