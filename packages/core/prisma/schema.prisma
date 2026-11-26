@@ -374,7 +374,7 @@ model Quote {
   /// customer is not the quote's customer.
   acceptedByContactId   String?            @db.Uuid
 
-  customer  Customer         @relation(fields: [customerId], references: [id])
+  customer   Customer         @relation(fields: [customerId], references: [id])
   property   Property         @relation(fields: [propertyId], references: [id])
   revisionOf Quote?           @relation("QuoteRevisions", fields: [revisionOfId], references: [id])
   revisions  Quote[]          @relation("QuoteRevisions")

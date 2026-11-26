@@ -56,7 +56,7 @@ export default async function HomePage({
         </p>
       ) : (
         home.groups.map((g) => (
-          <CustomerGroup key={g.id} group={g} open={open} showStatus={home.hasManaged} />
+          <CustomerGroup key={g.id} group={g} open={open} agencyView={home.hasManaged} />
         ))
       )}
     </SignedInShell>

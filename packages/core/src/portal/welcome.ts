@@ -10,7 +10,8 @@ import type { Db } from "../db";
 import type { PortalScope } from "./scope";
 import type { WelcomeInput } from "./welcome-schema";
 
-export const WELCOME_GONE = "This step is no longer needed. Refresh the page.";
+export const WELCOME_GONE =
+  "This step is already saved or no longer available. Continue to your quotes.";
 
 export type WelcomeStep = {
   contactId: string;

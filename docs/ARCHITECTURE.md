@@ -117,8 +117,9 @@ These apply to every module. A module is not finished until it follows all of th
   must type the customer number to confirm. It writes the contacts and properties first and the
   customer row last, under a lock on the customer row, so a half-finished run can be retried and an
   edit cannot slip in at the same time. Money amounts are kept. Archived customers can still be
-  corrected and stay archived; anonymised customers cannot be changed at all. A guard test, `privacy-coverage.test.ts`, fails whenever a new personal column
-  is added to a customer table until someone decides how anonymise treats it.
+  corrected and stay archived; anonymised customers cannot be changed at all. A guard test,
+  `privacy-coverage.test.ts`, fails whenever a new personal column is added to a customer table
+  until someone decides how anonymise treats it.
 - **CSV import:** at most 2 MB and 2,000 rows. The file is read and previewed first, then confirmed.
   Duplicates (same email, same phone, or same name and address) are skipped. Errors are reported by
   spreadsheet row number and skipped. The file itself is never stored, and the audit line records
@@ -151,8 +152,9 @@ These apply to every module. A module is not finished until it follows all of th
   personal text cannot be written back into one. Still to extend when they exist: invoices and any
   other table that holds customer data, and drive that test from the set of scrubbed fields.
 - Imported customers have no per-customer audit row (the import writes one line with counts).
-- Bind form ids to their customer in core (for example a contact id must belong to the customer
-  in the URL) before Module 4 adds client logins.
+- Portal ids are bound by the signed-in scope in core; staff form ids are still not bound to the
+  customer in the URL (the new staff actions use the contact's real customer for the change and the
+  form id only for the redirect). Bind them as a follow-up.
 - The database tests use some fixed emails and phone numbers, and `test-db.mjs` has no allow-list
   for which database it runs against. Check `.env.local` points at the development database before
   running `npm run test:db`.
@@ -281,9 +283,11 @@ These apply to every module. A module is not finished until it follows all of th
   properties, the quote lines and scope rows, insert-only on the audit log, and the rate-limit table.
   In Module 3b it could not read contacts, staff, services, the internal note, other customers' details
   or the audit history; Module 4 added a short, exact list of columns (see the Module 4 section) and
-  it still cannot read staff, services, wording, settings, the internal note or the audit history. Every database call in the public path names its columns (`select`), so it works with
-  those column-level grants. In production the portal exits at start-up when `PORTAL_DATABASE_URL`
-  is not set (`apps/portal/src/instrumentation.ts`); in development it falls back to `DATABASE_URL`.
+  it still cannot read staff, services, wording, settings, the internal note or the audit history.
+  Every database call in the public path names its columns (`select`), so it works with those
+  column-level grants. In production the portal exits at start-up when `PORTAL_DATABASE_URL`,
+  `RESEND_API_KEY`, `EMAIL_FROM` or `PORTAL_URL` is not set (`apps/portal/src/instrumentation.ts`,
+  fixed messages, never a value); in development it falls back to `DATABASE_URL`.
 - **The link.** Each issued quote gets a random 256-bit code, shown to staff as a link
   (`<PORTAL_URL>/q/<code>`) they can copy, revoke or replace. Unknown, revoked and wrong codes all
   give the same not-found page. Pages are `noindex`, `no-store` and send no referrer. Link previews,
@@ -334,8 +338,9 @@ These apply to every module. A module is not finished until it follows all of th
   use, stored only as a salted hash, dead after 5 wrong tries). A correct code starts a session: a
   random token in the cookie, stored in the database only as a SHA-256 hash, valid 30 days from last
   use and 90 days at most. The cookie is `__Host-ace-portal` in production (plain `ace-portal` over
-  http in development). Code requests are limited to 3 per email and 10 per visitor per hour (hashed
-  values in the rate-limit table). The reply never says whether an email is on file. This is not
+  http in development). Code requests are limited to 3 per email per hour, 10 per email per day and
+  10 per visitor per hour (hashed values in the rate-limit table; windows are kept two days before
+  cleanup), and each code allows 5 tries. The reply never says whether an email is on file. This is not
   Supabase Auth: client logins live in their own tables (`portal_codes`, `portal_sessions`) and are
   completely separate from staff accounts.
 - **The welcome page.** First sign-in only: name, phone, the billing address of the contact's own
@@ -356,13 +361,17 @@ These apply to every module. A module is not finished until it follows all of th
 - **Access.** After any acceptance commits (staff, link or portal), the quote customer's contacts who
   receive quotes, have an email and were never invited get access and a welcome email (sent with
   `after()`; an email failure never undoes the acceptance). Staff can Invite to portal (also re-sends)
-  and Remove access. A removed contact is never silently re-granted.
+  and Remove access. A removed contact is never silently re-granted. Changing a contact's email
+  switches its portal access off and clears the welcome (the invitation date is kept, so nothing
+  re-grants it); staff use Invite to portal for the new address.
 - **Email.** `sendEmail` posts to Resend's HTTP API (no extra package). Without a key: printed to the
-  server console in development (read the sign-in code there), a loud failure in production.
+  server console when NODE_ENV is development or test (read the sign-in code there), and a loud
+  failure for any other value. In production the portal refuses to start without `RESEND_API_KEY`,
+  `EMAIL_FROM` and `PORTAL_URL`.
 - **The portal's database login** (`ace_portal`) gained exactly the column grants listed in the
   migration `20261123120000_client_portal`, frozen by the exact-privileges catalogue test
-  (`packages/core/src/quotes/portal-role.db.test.ts`). It still cannot read property access notes, staff, services, wording,
-  settings or the audit history.
+  (`packages/core/src/quotes/portal-role.db.test.ts`). It still cannot read property access notes,
+  staff, services, wording, settings or the audit history.
 - **Privacy.** Codes and session tokens are stored only as hashes. Email addresses in the rate-limit
   table are hashed. Audit lines hold fixed words and ids only. Anonymising a customer ends its
   sign-ins and removes its codes and sessions. Sign-in pages and signed-in pages are `noindex` and
@@ -373,8 +382,6 @@ These apply to every module. A module is not finished until it follows all of th
 - No alert to staff when a client signs in or accepts; staff look at the Quotes list and "last signed
   in" on the contact.
 - Anyone who controls the inbox can sign in; there is no second factor for clients, by design.
-- A contact who already has access and changes email keeps access for the NEW address, with no fresh
-  invite or welcome. The owner is to decide whether to block that.
 - The billing address on the welcome page belongs to the customer, so it is shared with every contact
   of that customer.
 - A sign-in request that is sent (SENT) and one with no match (NO_MATCH) differ by a few milliseconds

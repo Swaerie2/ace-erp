@@ -7,8 +7,6 @@ import { BAD_REQUEST, errorsFrom, formValues } from "@/lib/form";
 import type { FormState } from "@/lib/form-state";
 import { requireSession } from "@/lib/session";
 
-const GONE = "This page is no longer available. Please sign in again.";
-
 export async function completeWelcomeAction(
   _prev: FormState,
   formData: FormData,
@@ -42,8 +40,13 @@ export async function completeWelcomeAction(
     await inPortalTx((tx) => completeWelcome(tx, session.scope, parsed.data));
   } catch (error) {
     if (error instanceof DomainError) {
-      const message = error.message === WELCOME_GONE ? GONE : error.message;
-      return { error: message, values, nonce: Date.now() };
+      // A step that is already saved or gone is a plain notice with a way on to the quotes.
+      return {
+        error: error.message,
+        ...(error.message === WELCOME_GONE ? { continueHref: "/" } : {}),
+        values,
+        nonce: Date.now(),
+      };
     }
     throw error;
   }

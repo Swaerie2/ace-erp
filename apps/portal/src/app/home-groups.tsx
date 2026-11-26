@@ -50,11 +50,12 @@ export function QuoteList({ quotes }: { quotes: PortalQuoteSummary[] }) {
 export function CustomerGroup({
   group,
   open,
-  showStatus,
+  agencyView,
 }: {
   group: PortalCustomerGroup;
   open: boolean;
-  showStatus: boolean;
+  /** True when the person manages complexes: their own group is then labelled "Your own account". */
+  agencyView: boolean;
 }) {
   return (
     <details
@@ -62,8 +63,10 @@ export function CustomerGroup({
       className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-charcoal/10 sm:p-5"
     >
       <summary className="flex min-h-11 cursor-pointer flex-wrap items-center gap-2 font-display text-lg font-semibold text-forest">
-        <span className="min-w-0 break-words">{group.name}</span>
-        {showStatus ? (
+        <span className="min-w-0 break-words">
+          {agencyView && !group.managed ? "Your own account" : group.name}
+        </span>
+        {group.managed ? (
           <span className="rounded-full bg-forest/10 px-2.5 py-0.5 font-sans text-xs font-semibold text-forest">
             {CUSTOMER_STATUS[group.status] ?? group.status}
           </span>

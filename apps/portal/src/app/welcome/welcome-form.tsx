@@ -2,6 +2,7 @@
 
 import type { WelcomeStep } from "@ace/core/portal";
 import { useFocusOnFeedback } from "@ace/ui/use-focus-on-feedback";
+import Link from "next/link";
 import { useActionState, useRef } from "react";
 import { fieldClass, primaryButtonClass } from "@/components/form-classes";
 import { completeWelcomeAction } from "./actions";
@@ -94,6 +95,14 @@ export function WelcomeForm({ step }: { step: WelcomeStep }) {
           className="rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-800 ring-1 ring-red-200"
         >
           {state.error}
+          {state.continueHref ? (
+            <>
+              {" "}
+              <Link href={state.continueHref} className="underline">
+                Go to your quotes
+              </Link>
+            </>
+          ) : null}
         </p>
       ) : null}
       <input type="hidden" name="contactId" value={step.contactId} />
