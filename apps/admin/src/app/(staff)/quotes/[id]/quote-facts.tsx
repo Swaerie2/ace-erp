@@ -20,6 +20,10 @@ export function QuoteFacts({
   customerStatus: "LEAD" | "ACTIVE" | "PAUSED" | "ARCHIVED";
 }) {
   const onLink = quote.acceptedMethod === "CLIENT_LINK";
+  const inPortal = quote.acceptedMethod === "CLIENT_PORTAL";
+  const contact = quote.acceptedByContact;
+  const forAgency =
+    contact && contact.customerId !== quote.customerId ? contact.customer.displayName : null;
   const chosen = quote.lines.filter((l) => l.lineKind === "OPTIONAL" && l.chosen);
   const rows: React.ReactNode[] = [];
   if (quote.sentAt) {
@@ -34,12 +38,21 @@ export function QuoteFacts({
     rows.push(
       <Row key="accepted" label="Accepted">
         {formatDateTime(quote.acceptedAt)}
-        {onLink
-          ? ` on the client link by ${quote.acceptedByName ?? "the client"}`
-          : `${quote.acceptedMethod ? ` (${ACCEPT_METHOD_LABELS[quote.acceptedMethod]})` : ""}${quote.acceptedByName ? ` by ${quote.acceptedByName}` : ""}`}
+        {inPortal
+          ? ` in the client portal by ${contact?.name ?? quote.acceptedByName ?? "the client"}${forAgency ? ` (for agency ${forAgency})` : ""}`
+          : onLink
+            ? ` on the client link by ${quote.acceptedByName ?? "the client"}`
+            : `${quote.acceptedMethod ? ` (${ACCEPT_METHOD_LABELS[quote.acceptedMethod]})` : ""}${quote.acceptedByName ? ` by ${quote.acceptedByName}` : ""}`}
       </Row>,
     );
-    if (onLink && (customerStatus === "PAUSED" || customerStatus === "ARCHIVED")) {
+    if (inPortal && quote.acceptedByName && quote.acceptedByName !== contact?.name) {
+      rows.push(
+        <Row key="typed" label="Name typed on acceptance">
+          {quote.acceptedByName}
+        </Row>,
+      );
+    }
+    if ((onLink || inPortal) && (customerStatus === "PAUSED" || customerStatus === "ARCHIVED")) {
       rows.push(
         <Row key="customer" label="Check the customer">
           The customer is {customerStatus === "PAUSED" ? "paused" : "archived"}, so they were not
@@ -80,7 +93,7 @@ export function QuoteFacts({
     rows.push(
       <Row key="declined" label="Declined">
         {formatDateTime(quote.declinedAt)}
-        {quote.declinedByClient ? " by the client on the link" : ""}
+        {quote.declinedByClient ? " by the client online" : ""}
         {quote.declineReason ? `: ${quote.declineReason}` : ""}
       </Row>,
     );

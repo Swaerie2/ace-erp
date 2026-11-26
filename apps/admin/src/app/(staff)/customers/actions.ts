@@ -7,19 +7,33 @@ import {
   addProperty,
   archiveCustomer,
   archiveProperty,
+  clearManagedBy,
   contactSchema,
   createCustomer,
   customerSchema,
+  DomainError,
   findDuplicateContacts,
+  ForbiddenError,
+  getDb,
   hasPropertyInput,
+  HIERARCHY_MESSAGES,
   inTx,
+  inviteContact,
   MANAGEMENT,
+  PORTAL_ACCESS_MESSAGES,
+  portalSignInUrl,
   propertySchema,
   removeContact,
+  removeContactAccess,
   restoreCustomer,
+  sendEmail,
+  sendWelcomeEmails,
+  setBillsToManager,
+  setManagedBy,
   updateContact,
   updateCustomer,
   updateProperty,
+  type HierarchyMessageKey,
 } from "@ace/core";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -250,4 +264,125 @@ export async function anonymiseCustomerAction(
     return failure(error);
   }
   redirect(`/customers/${id.data}`);
+}
+
+// --- managing agency and client portal access ------------------------------------------------------
+// Every address-bar value below is a fixed code (never typed text); the pages turn the code into words.
+
+/** The customer id from a form. A crafted or missing one goes back to the list, never to an error page. */
+function customerIdOrList(formData: FormData): string {
+  const parsed = idSchema.safeParse(formData.get("customerId"));
+  if (!parsed.success) redirect("/customers");
+  return parsed.data;
+}
+
+/** A refusal of the agency rules as a fixed code for the address bar (the page turns it back into words). */
+function hierarchyCode(error: unknown): string {
+  if (error instanceof ForbiddenError) redirect("/forbidden");
+  if (error instanceof DomainError) {
+    const keys = Object.keys(HIERARCHY_MESSAGES) as HierarchyMessageKey[];
+    return keys.find((k) => HIERARCHY_MESSAGES[k] === error.message) ?? "generic";
+  }
+  throw error;
+}
+
+export async function setManagedByAction(formData: FormData): Promise<void> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const customerId = customerIdOrList(formData);
+  const agencyId = idSchema.safeParse(formData.get("agencyId"));
+  let code = "linked";
+  if (!agencyId.success) {
+    code = "generic";
+  } else {
+    try {
+      await inTx((tx) => setManagedBy(tx, actor, customerId, agencyId.data));
+    } catch (error) {
+      code = hierarchyCode(error);
+    }
+  }
+  redirect(`/customers/${customerId}?tab=overview&link=${code}`);
+}
+
+export async function clearManagedByAction(formData: FormData): Promise<void> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const customerId = customerIdOrList(formData);
+  let code = "cleared";
+  try {
+    await inTx((tx) => clearManagedBy(tx, actor, customerId));
+  } catch (error) {
+    code = hierarchyCode(error);
+  }
+  redirect(`/customers/${customerId}?tab=overview&link=${code}`);
+}
+
+export async function setBillsToAction(formData: FormData): Promise<void> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const customerId = customerIdOrList(formData);
+  const choice = formData.get("billsTo");
+  let code = "billing";
+  if (choice !== "agency" && choice !== "complex") {
+    code = "generic";
+  } else {
+    try {
+      await inTx((tx) => setBillsToManager(tx, actor, customerId, choice === "agency"));
+    } catch (error) {
+      code = hierarchyCode(error);
+    }
+  }
+  redirect(`/customers/${customerId}?tab=overview&link=${code}`);
+}
+
+/** A refusal of the portal access rules as a fixed code for the address bar. */
+function portalCode(error: unknown): string {
+  if (error instanceof ForbiddenError) redirect("/forbidden");
+  if (error instanceof DomainError) {
+    if (error.message === PORTAL_ACCESS_MESSAGES.noEmail) return "no-email";
+    if (error.message === PORTAL_ACCESS_MESSAGES.archived) return "archived";
+    return "portal-generic";
+  }
+  throw error;
+}
+
+/** Invite to portal: gives access, then sends the welcome after the change has committed. */
+export async function inviteContactAction(formData: FormData): Promise<void> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const customerId = customerIdOrList(formData);
+  const contactId = idSchema.safeParse(formData.get("contactId"));
+  let code = "portal-generic";
+  if (contactId.success) {
+    // Read before anything changes, so a missing setting stops here and not after the commit.
+    const signInUrl = portalSignInUrl();
+    try {
+      const invite = await inTx((tx) => inviteContact(tx, actor, contactId.data));
+      const { failed } = await sendWelcomeEmails(getDb(), [invite], {
+        send: (message) => sendEmail(message),
+        signInUrl,
+      });
+      code = failed > 0 ? "invite-failed" : "invited";
+    } catch (error) {
+      code = portalCode(error);
+    }
+  }
+  redirect(`/customers/${customerId}?tab=contacts&error=${code}`);
+}
+
+export async function removeContactAccessAction(formData: FormData): Promise<void> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const customerId = customerIdOrList(formData);
+  const contactId = idSchema.safeParse(formData.get("contactId"));
+  let code = "portal-generic";
+  if (contactId.success) {
+    code = "removed";
+    try {
+      await inTx((tx) => removeContactAccess(tx, actor, contactId.data));
+    } catch (error) {
+      code = portalCode(error);
+    }
+  }
+  redirect(`/customers/${customerId}?tab=contacts&error=${code}`);
 }

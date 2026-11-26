@@ -23,11 +23,18 @@ export async function listQuoteActivity(store: QuoteStore, actor: Actor, id: str
     select: { id: true, name: true },
   });
   const names = new Map(staff.map((s) => [s.id, s.name]));
+  /** A client act through the portal carries method CLIENT_PORTAL (acceptance) or via "portal" (decline). */
+  const viaPortal = (after: unknown) => {
+    const a = after as { method?: unknown; via?: unknown } | null;
+    return a?.method === "CLIENT_PORTAL" || a?.via === "portal";
+  };
   return entries.map((e) => ({
     ...e,
     actorName:
       e.actorType === "CUSTOMER"
-        ? "Client (private link)"
+        ? viaPortal(e.after)
+          ? "Client (portal)"
+          : "Client (private link)"
         : e.actorId
           ? (names.get(e.actorId) ?? "Staff")
           : "System",

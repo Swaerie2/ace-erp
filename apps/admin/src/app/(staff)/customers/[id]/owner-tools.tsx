@@ -30,8 +30,9 @@ export function OwnerTools({ id, number }: { id: string; number: string }) {
         <input type="hidden" name="id" value={id} />
         <p id="anonymise-warning" className="text-sm text-charcoal/80">
           <strong>Anonymise</strong> permanently removes names, phone numbers, emails, addresses,
-          notes and access details. The customer number and money amounts stay so old invoices still
-          add up. <strong>This cannot be undone.</strong>
+          notes and access details, and ends their client portal sign-ins. A customer that still
+          manages complexes cannot be anonymised. The customer number and money amounts stay so old
+          invoices still add up. <strong>This cannot be undone.</strong>
         </p>
         <label className="block text-sm font-medium">
           Type {number} to confirm
