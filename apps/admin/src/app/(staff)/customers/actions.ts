@@ -166,6 +166,7 @@ export async function saveContactAction(_prev: FormState, formData: FormData): P
   const parsed = contactSchema.safeParse(values);
   if (!parsed.success) return { fieldErrors: errorsFrom(parsed.error), values, nonce: Date.now() };
 
+  let portalSwitchedOff = false;
   try {
     const outcome = await inTx(async (tx) => {
       if (values.confirmDuplicates !== "1") {
@@ -176,16 +177,23 @@ export async function saveContactAction(_prev: FormState, formData: FormData): P
         });
         if (duplicates.length > 0) return { duplicates } as const;
       }
-      if (contactId?.success) await updateContact(tx, actor, contactId.data, parsed.data);
-      else await addContact(tx, actor, customerId.data, parsed.data);
-      return { saved: true } as const;
+      if (contactId?.success) {
+        const { portalSwitchedOff } = await updateContact(tx, actor, contactId.data, parsed.data);
+        return { saved: true, portalSwitchedOff } as const;
+      }
+      await addContact(tx, actor, customerId.data, parsed.data);
+      return { saved: true, portalSwitchedOff: false } as const;
     });
     if ("duplicates" in outcome)
       return { duplicates: outcome.duplicates, values, nonce: Date.now() };
+    portalSwitchedOff = outcome.portalSwitchedOff;
   } catch (error) {
     return failure(error, values);
   }
-  redirect(`/customers/${customerId.data}?tab=contacts`);
+  // A fixed code: the contacts tab turns it into words.
+  redirect(
+    `/customers/${customerId.data}?tab=contacts${portalSwitchedOff ? "&error=portal-off-email" : ""}`,
+  );
 }
 
 export async function removeContactAction(formData: FormData): Promise<void> {
@@ -346,14 +354,27 @@ function portalCode(error: unknown): string {
   throw error;
 }
 
+/**
+ * The customer the contact really belongs to. The form's customer id is only a fallback (for a contact
+ * that cannot be found): the redirect must never follow an id that does not match the contact.
+ */
+async function contactCustomerId(contactId: string, fallback: string): Promise<string> {
+  const row = await getDb().contact.findUnique({
+    where: { id: contactId },
+    select: { customerId: true },
+  });
+  return row?.customerId ?? fallback;
+}
+
 /** Invite to portal: gives access, then sends the welcome after the change has committed. */
 export async function inviteContactAction(formData: FormData): Promise<void> {
   const staff = await requireStaff(MANAGEMENT);
   const actor = await toActor(staff);
-  const customerId = customerIdOrList(formData);
+  let customerId = customerIdOrList(formData);
   const contactId = idSchema.safeParse(formData.get("contactId"));
   let code = "portal-generic";
   if (contactId.success) {
+    customerId = await contactCustomerId(contactId.data, customerId);
     // Read before anything changes, so a missing setting stops here and not after the commit.
     const signInUrl = portalSignInUrl();
     try {
@@ -373,10 +394,11 @@ export async function inviteContactAction(formData: FormData): Promise<void> {
 export async function removeContactAccessAction(formData: FormData): Promise<void> {
   const staff = await requireStaff(MANAGEMENT);
   const actor = await toActor(staff);
-  const customerId = customerIdOrList(formData);
+  let customerId = customerIdOrList(formData);
   const contactId = idSchema.safeParse(formData.get("contactId"));
   let code = "portal-generic";
   if (contactId.success) {
+    customerId = await contactCustomerId(contactId.data, customerId);
     code = "removed";
     try {
       await inTx((tx) => removeContactAccess(tx, actor, contactId.data));

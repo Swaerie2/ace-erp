@@ -1,6 +1,6 @@
 import { PORTAL_ACCESS_MESSAGES, type getCustomer } from "@ace/core";
 import Link from "next/link";
-import { secondaryButtonClass } from "@/components/form";
+import { dangerButtonClass, secondaryButtonClass } from "@/components/form";
 import { formatDate } from "@/lib/format";
 import { inviteContactAction, removeContactAccessAction, removeContactAction } from "../actions";
 import { ContactForm, type ContactRow } from "./contact-form";
@@ -18,6 +18,10 @@ const NOTICES: Record<string, { text: string; tone: "error" | "good" | "warn" }>
     tone: "warn",
   },
   removed: { text: "Portal access removed for this contact.", tone: "good" },
+  "portal-off-email": {
+    text: "Portal access was switched off because the email changed. Use Invite to portal for the new address.",
+    tone: "warn",
+  },
   "no-email": { text: PORTAL_ACCESS_MESSAGES.noEmail, tone: "error" },
   archived: { text: PORTAL_ACCESS_MESSAGES.archived, tone: "error" },
   "portal-generic": {
@@ -59,11 +63,24 @@ function portalLine(c: Contact): string {
   ].join(" · ");
 }
 
-function PortalControls({ customerId, c }: { customerId: string; c: Contact }) {
+function PortalControls({
+  customerId,
+  archived,
+  c,
+}: {
+  customerId: string;
+  archived: boolean;
+  c: Contact;
+}) {
   const again = c.portalAccess && Boolean(c.portalInvitedAt);
   return (
     <div className="mt-2 flex flex-wrap items-start gap-2">
-      {c.email ? (
+      {archived && c.email ? (
+        <p className="text-sm text-charcoal/70">
+          Restore this customer before inviting anyone to the portal.
+        </p>
+      ) : null}
+      {!archived && c.email ? (
         <form action={inviteContactAction}>
           <input type="hidden" name="customerId" value={customerId} />
           <input type="hidden" name="contactId" value={c.id} />
@@ -85,7 +102,7 @@ function PortalControls({ customerId, c }: { customerId: string; c: Contact }) {
             </p>
             <input type="hidden" name="customerId" value={customerId} />
             <input type="hidden" name="contactId" value={c.id} />
-            <button type="submit" className={secondaryButtonClass}>
+            <button type="submit" className={dangerButtonClass}>
               Yes, remove portal access
             </button>
           </form>
@@ -142,7 +159,13 @@ export function ContactsTab({
                   .join(" · ") || "no messages"}
               </p>
               <p className="mt-1 text-xs text-charcoal/60">{portalLine(c)}</p>
-              {locked ? null : <PortalControls customerId={customer.id} c={c} />}
+              {locked ? null : (
+                <PortalControls
+                  customerId={customer.id}
+                  archived={customer.status === "ARCHIVED"}
+                  c={c}
+                />
+              )}
             </div>
             {locked ? null : (
               <div className="flex gap-2">

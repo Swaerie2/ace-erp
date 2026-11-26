@@ -336,6 +336,105 @@ describe.skipIf(!dbTestsEnabled)("portal access", () => {
       expect(await tx.portalSession.count({ where: { email: newEmail } })).toBe(1);
     });
   });
+
+  it("switches portal access off when a contact's email changes, keeping the invitation date", async () => {
+    await withRollback(async (tx) => {
+      const client = await makeClient(tx);
+      const before = await tx.contact.findUniqueOrThrow({ where: { id: client.contactId } });
+      expect(before.portalAccess).toBe(true);
+      expect(before.portalWelcomedAt).not.toBeNull();
+      await makeSession(tx, client.email);
+      const newEmail = `${randomUUID()}@example.com`;
+      const result = await updateContact(
+        tx,
+        manager,
+        client.contactId,
+        contactSchema.parse({ name: before.name, email: newEmail, receivesQuotes: "on" }),
+      );
+      expect(result).toEqual({ portalSwitchedOff: true });
+      const after = await tx.contact.findUniqueOrThrow({ where: { id: client.contactId } });
+      expect(after.email).toBe(newEmail);
+      expect(after.portalAccess).toBe(false);
+      expect(after.portalWelcomedAt).toBeNull();
+      // Kept, so a later acceptance never gives the access back on its own.
+      expect(after.portalInvitedAt).toEqual(before.portalInvitedAt);
+      expect(await tx.portalSession.count({ where: { email: client.email } })).toBe(0);
+      expect(await tx.portalCode.count({ where: { email: client.email } })).toBe(0);
+    });
+  });
+
+  it("leaves portal access alone when the email is unchanged, and for a contact without access", async () => {
+    await withRollback(async (tx) => {
+      const client = await makeClient(tx);
+      const before = await tx.contact.findUniqueOrThrow({ where: { id: client.contactId } });
+      await makeSession(tx, client.email);
+      const same = await updateContact(
+        tx,
+        manager,
+        client.contactId,
+        contactSchema.parse({ name: "ZZ E2E Renamed", email: client.email, receivesQuotes: "on" }),
+      );
+      expect(same).toEqual({ portalSwitchedOff: false });
+      const after = await tx.contact.findUniqueOrThrow({ where: { id: client.contactId } });
+      expect(after.name).toBe("ZZ E2E Renamed");
+      expect(after.portalAccess).toBe(true);
+      expect(after.portalWelcomedAt).toEqual(before.portalWelcomedAt);
+      expect(after.portalInvitedAt).toEqual(before.portalInvitedAt);
+      expect(await tx.portalSession.count({ where: { email: client.email } })).toBe(1);
+
+      // Never invited: a new email gives no access and no invitation date.
+      const other = await addPortalContact(tx, client.customerId, { access: false });
+      const moved = await updateContact(
+        tx,
+        manager,
+        other.contactId,
+        contactSchema.parse({
+          name: "ZZ E2E Other",
+          email: `${randomUUID()}@example.com`,
+          receivesQuotes: "on",
+        }),
+      );
+      expect(moved).toEqual({ portalSwitchedOff: false });
+      const row = await tx.contact.findUniqueOrThrow({ where: { id: other.contactId } });
+      expect(row.portalAccess).toBe(false);
+      expect(row.portalInvitedAt).toBeNull();
+      expect(row.portalWelcomedAt).toBeNull();
+    });
+  });
+
+  it("keeps sign-ins only for a shared email that still has access on a live customer", async () => {
+    await withRollback(async (tx) => {
+      const shared = `${randomUUID()}@example.com`;
+      const a = await makeClient(tx, { email: shared });
+      const live = await makeClient(tx);
+      await addPortalContact(tx, live.customerId, { email: shared });
+      await makeSession(tx, shared);
+      // Another live customer's contact with the same email still has access: nobody is signed out.
+      expect(await endPortalSignIns(tx, [shared], [a.contactId])).toBe(0);
+      expect(await tx.portalSession.count({ where: { email: shared } })).toBe(1);
+
+      // The other contact's customer is archived: that access no longer counts.
+      await tx.customer.update({
+        where: { id: live.customerId },
+        data: { status: "ARCHIVED", archivedAt: new Date() },
+      });
+      expect(await endPortalSignIns(tx, [shared], [a.contactId])).toBe(1);
+      expect(await tx.portalSession.count({ where: { email: shared } })).toBe(0);
+
+      // Restored: it counts again. Anonymised: it does not.
+      await tx.customer.update({
+        where: { id: live.customerId },
+        data: { status: "ACTIVE", archivedAt: null },
+      });
+      await makeSession(tx, shared);
+      expect(await endPortalSignIns(tx, [shared], [a.contactId])).toBe(0);
+      await tx.customer.update({
+        where: { id: live.customerId },
+        data: { anonymisedAt: new Date() },
+      });
+      expect(await endPortalSignIns(tx, [shared], [a.contactId])).toBe(1);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------------------------------------

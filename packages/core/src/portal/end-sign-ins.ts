@@ -14,7 +14,13 @@ export async function endPortalSignIns(
   let ended = 0;
   for (const email of new Set(emails)) {
     const stillHasAccess = await store.contact.count({
-      where: { email, portalAccess: true, id: { notIn: [...exceptContactIds] } },
+      where: {
+        email,
+        portalAccess: true,
+        id: { notIn: [...exceptContactIds] },
+        // Access on an archived or anonymised customer is outside every portal scope: it does not count.
+        customer: { status: { not: "ARCHIVED" }, anonymisedAt: null },
+      },
     });
     if (stillHasAccess > 0) continue;
     await store.portalSession.deleteMany({ where: { email } });
