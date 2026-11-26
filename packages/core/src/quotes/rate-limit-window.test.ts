@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rateBucket, windowStartFor } from "./rate-limit-window";
+import { RATE_LIMITS, rateBucket, windowStartFor } from "./rate-limit-window";
 
 describe("rate limit windows", () => {
   it("rounds down to the start of the 10 minute window in UTC", () => {
@@ -13,8 +13,21 @@ describe("rate limit windows", () => {
       "2026-11-21T10:10:00.000Z",
     );
   });
-  it("keeps views and actions in separate buckets", () => {
+  it("rounds down to the hour for the sign-in code limits", () => {
+    expect(windowStartFor(new Date("2026-11-23T10:59:59.000Z"), 60).toISOString()).toBe(
+      "2026-11-23T10:00:00.000Z",
+    );
+  });
+  it("keeps every kind in its own bucket", () => {
     expect(rateBucket("view", "abc")).toBe("view:abc");
     expect(rateBucket("act", "abc")).toBe("act:abc");
+    expect(rateBucket("code-email", "abc")).toBe("code-email:abc");
+    expect(rateBucket("code-ip", "abc")).toBe("code-ip:abc");
+  });
+  it("allows 3 code requests per email and 10 per visitor per hour", () => {
+    expect(RATE_LIMITS["code-email"]).toEqual({ limit: 3, windowMinutes: 60 });
+    expect(RATE_LIMITS["code-ip"]).toEqual({ limit: 10, windowMinutes: 60 });
+    expect(RATE_LIMITS.view).toEqual({ limit: 120, windowMinutes: 10 });
+    expect(RATE_LIMITS.act).toEqual({ limit: 10, windowMinutes: 10 });
   });
 });

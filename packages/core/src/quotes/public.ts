@@ -12,13 +12,7 @@ import {
 } from "./acceptance";
 import { buildQuoteDocument, type QuoteDocument } from "./document";
 import { publicViewState, type PublicViewState } from "./public-state";
-import {
-  ACT_LIMIT,
-  VIEW_LIMIT,
-  rateBucket,
-  windowStartFor,
-  type RateKind,
-} from "./rate-limit-window";
+import { RATE_LIMITS, rateBucket, windowStartFor, type RateKind } from "./rate-limit-window";
 import {
   displayStatus,
   formatDateSA,
@@ -333,9 +327,9 @@ export async function declineViaLink(
 }
 
 /**
- * Counts one request for this visitor (already hashed) in the current 10-minute window, with one atomic
- * statement, and says whether it is still within the limit. About one call in a hundred also deletes
- * windows older than a day (`opts.cleanup` forces or prevents this, for tests).
+ * Counts one request for this bucket (a hashed visitor address or a hashed email) in the current window of
+ * its kind, with one atomic statement, and says whether it is still within the limit. About one call in
+ * a hundred also deletes windows older than a day (`opts.cleanup` forces or prevents this, for tests).
  *
  * Call it in its own statement or transaction BEFORE the action transaction (accept or decline). If it
  * ran inside the action transaction, a refused attempt (an error that rolls the transaction back) would
@@ -344,12 +338,13 @@ export async function declineViaLink(
 export async function checkRateLimit(
   store: PublicStore,
   kind: RateKind,
-  ipHash: string,
+  hash: string,
   opts: { now?: Date; cleanup?: boolean } = {},
 ): Promise<{ allowed: boolean }> {
   const now = opts.now ?? new Date();
-  const bucket = rateBucket(kind, ipHash);
-  const windowStart = windowStartFor(now);
+  const bucket = rateBucket(kind, hash);
+  const rule = RATE_LIMITS[kind];
+  const windowStart = windowStartFor(now, rule.windowMinutes);
   const rows = await store.$queryRaw<{ count: number }[]>`
     insert into public_link_hits ("bucket", "windowStart", "count") values (${bucket}, ${windowStart}, 1)
     on conflict ("bucket", "windowStart") do update set "count" = public_link_hits."count" + 1
@@ -360,5 +355,5 @@ export async function checkRateLimit(
       where: { windowStart: { lt: new Date(now.getTime() - 24 * 60 * 60 * 1000) } },
     });
   }
-  return { allowed: count <= (kind === "view" ? VIEW_LIMIT : ACT_LIMIT) };
+  return { allowed: count <= rule.limit };
 }

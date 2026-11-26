@@ -2,6 +2,7 @@ export { getDb } from "./db";
 export * from "./portal-db";
 export type { Db } from "./db";
 export { getDatabaseUrl, requireEnv } from "./env";
+export { getPortalBaseUrl, portalSignInUrl } from "./portal/config";
 export { recordAudit } from "./audit";
 export type { AuditEntry } from "./audit";
 export { computeTotals, formatZAR, randToCents, sumCents } from "./money";
