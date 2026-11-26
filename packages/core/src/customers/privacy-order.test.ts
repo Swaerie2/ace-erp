@@ -10,7 +10,14 @@ type Where = { id?: string; customerId?: string; anonymisedAt?: null };
 type Data = Record<string, unknown>;
 
 /** A recording stand-in for the database. Only what anonymiseCustomer touches. */
-function fakeStore(opts: { scrubCount?: number; failOn?: string } = {}) {
+function fakeStore(
+  opts: {
+    scrubCount?: number;
+    failOn?: string;
+    managedCount?: number;
+    contacts?: { id: string; email: string }[];
+  } = {},
+) {
   const calls: { op: string; where?: Where; data?: Data }[] = [];
   const record = (op: string) => async (args?: { where?: Where; data?: Data }) => {
     calls.push({
@@ -30,10 +37,17 @@ function fakeStore(opts: { scrubCount?: number; failOn?: string } = {}) {
       findUnique: async () => ({ id: ID, number: 7, anonymisedAt: null, archivedAt: null }),
       updateMany: record("customer.updateMany"),
       update: record("customer.update"),
+      count: async () => opts.managedCount ?? 0,
     },
-    contact: { updateMany: record("contact.updateMany") },
+    contact: {
+      updateMany: record("contact.updateMany"),
+      findMany: async () => opts.contacts ?? [],
+      count: async () => 0,
+    },
     property: { updateMany: record("property.updateMany") },
     quote: { updateMany: record("quote.updateMany") },
+    portalSession: { deleteMany: record("portalSession.deleteMany") },
+    portalCode: { deleteMany: record("portalCode.deleteMany") },
     auditLog: { create: record("auditLog.create") },
   } as unknown as Store;
   return { store, calls };
@@ -78,5 +92,28 @@ describe("anonymiseCustomer write order", () => {
     const retry = fakeStore();
     await anonymiseCustomer(retry.store, owner, ID, "C-0007");
     expect(retry.calls.some((c) => c.data && "anonymisedAt" in c.data)).toBe(true);
+  });
+
+  it("refuses an agency that still manages complexes before writing anything", async () => {
+    const { store, calls } = fakeStore({ managedCount: 2 });
+    await expect(anonymiseCustomer(store, owner, ID, "C-0007")).rejects.toThrow(
+      "This customer still manages complexes.",
+    );
+    expect(calls.map((c) => c.op)).toEqual([]);
+  });
+
+  it("ends the contacts' portal sign-ins before the customer row is marked", async () => {
+    const { store, calls } = fakeStore({
+      contacts: [{ id: "c1", email: "zz.person@example.com" }],
+    });
+    await anonymiseCustomer(store, owner, ID, "C-0007");
+    const ops = calls.map((c) => c.op);
+    const scrubIndex = calls.findIndex((c) => c.data && "anonymisedAt" in c.data);
+    expect(ops).toContain("portalSession.deleteMany");
+    expect(ops).toContain("portalCode.deleteMany");
+    expect(ops.indexOf("portalSession.deleteMany")).toBeLessThan(scrubIndex);
+    expect(calls.find((c) => c.op === "portalSession.deleteMany")?.where).toEqual({
+      email: "zz.person@example.com",
+    });
   });
 });
