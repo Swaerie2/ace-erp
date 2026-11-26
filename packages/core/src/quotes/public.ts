@@ -41,7 +41,7 @@ export type PublicStore = Pick<
   | "$queryRaw"
 >;
 
-const PUBLIC_QUOTE_SELECT = {
+export const PUBLIC_QUOTE_SELECT = {
   id: true,
   customerId: true,
   status: true,
@@ -76,41 +76,31 @@ const PUBLIC_QUOTE_SELECT = {
   },
 } as const satisfies Prisma.QuoteSelect;
 
+export type PublicQuoteRow = Prisma.QuoteGetPayload<{ select: typeof PUBLIC_QUOTE_SELECT }>;
+
+/** What a client may see of one quote: name and property address only, never email, phone or notes. */
+export type PublicQuoteView = {
+  state: PublicViewState;
+  reference: string;
+  doc: QuoteDocument;
+  optionalLines: { id: string; label: string }[];
+  acceptance: {
+    name: string | null;
+    at: string;
+    startDate: string | null;
+    chosen: string[];
+  } | null;
+  declinedAt: string | null;
+  business: { tradingName: string; phone: string; email: string };
+};
+
 export type PublicQuoteResult =
-  | { found: false }
-  | {
-      found: true;
-      state: PublicViewState;
-      reference: string;
-      doc: QuoteDocument;
-      optionalLines: { id: string; label: string }[];
-      acceptance: {
-        name: string | null;
-        at: string;
-        startDate: string | null;
-        chosen: string[];
-      } | null;
-      declinedAt: string | null;
-      newerToken: string | null;
-      business: { tradingName: string; phone: string; email: string };
-    };
+  { found: false } | ({ found: true; newerToken: string | null } & PublicQuoteView);
 
-/** Finds a quote by its private code. Wrong, malformed, revoked and draft codes all give `{ found: false }`. */
-export async function getPublicQuote(
-  store: PublicStore,
-  token: string,
-  now: Date = new Date(),
-): Promise<PublicQuoteResult> {
-  if (!isLinkTokenShape(token)) return { found: false };
-  const q = await store.quote.findUnique({
-    where: { linkToken: token },
-    select: PUBLIC_QUOTE_SELECT,
-  });
-  if (!q) return { found: false };
-  const today = todaySA(now);
+/** Shapes a quote row for a client (the private link and the portal use the same view). Null for a draft. */
+export function buildPublicView(q: PublicQuoteRow, today: string): PublicQuoteView | null {
   const state = publicViewState(q, today);
-  if (!state) return { found: false };
-
+  if (!state) return null;
   const wording = wordingSnapshotSchema.parse(q.wordingSnapshot);
   const reference = formatQuoteReference(q) ?? "";
   const lines = q.lines.map((l) => ({
@@ -139,23 +129,6 @@ export async function getPublicQuote(
     lines,
     wording,
   });
-
-  let newerToken: string | null = null;
-  if (state === "REPLACED" && q.numberYear !== null && q.numberSeq !== null) {
-    const newer = await store.quote.findFirst({
-      where: {
-        numberYear: q.numberYear,
-        numberSeq: q.numberSeq,
-        revision: { gt: q.revision },
-        status: { in: ["ISSUED", "ACCEPTED"] },
-        linkToken: { not: null },
-      },
-      orderBy: { revision: "desc" },
-      select: { linkToken: true },
-    });
-    newerToken = newer?.linkToken ?? null;
-  }
-
   const optionalLines = lines
     .filter((l) => l.lineKind === "OPTIONAL")
     .map((l) => ({
@@ -174,22 +147,52 @@ export async function getPublicQuote(
             .map((l) => `${l.description} (${formatZAR(l.amountCents ?? 0)})`),
         }
       : null;
-
   return {
-    found: true,
     state,
     reference,
     doc,
     optionalLines,
     acceptance,
     declinedAt: q.declinedAt ? formatDateTimeSA(q.declinedAt) : null,
-    newerToken,
     business: {
       tradingName: wording.business.tradingName,
       phone: wording.business.phone,
       email: wording.business.email,
     },
   };
+}
+
+/** Finds a quote by its private code. Wrong, malformed, revoked and draft codes all give `{ found: false }`. */
+export async function getPublicQuote(
+  store: PublicStore,
+  token: string,
+  now: Date = new Date(),
+): Promise<PublicQuoteResult> {
+  if (!isLinkTokenShape(token)) return { found: false };
+  const q = await store.quote.findUnique({
+    where: { linkToken: token },
+    select: PUBLIC_QUOTE_SELECT,
+  });
+  if (!q) return { found: false };
+  const view = buildPublicView(q, todaySA(now));
+  if (!view) return { found: false };
+
+  let newerToken: string | null = null;
+  if (view.state === "REPLACED" && q.numberYear !== null && q.numberSeq !== null) {
+    const newer = await store.quote.findFirst({
+      where: {
+        numberYear: q.numberYear,
+        numberSeq: q.numberSeq,
+        revision: { gt: q.revision },
+        status: { in: ["ISSUED", "ACCEPTED"] },
+        linkToken: { not: null },
+      },
+      orderBy: { revision: "desc" },
+      select: { linkToken: true },
+    });
+    newerToken = newer?.linkToken ?? null;
+  }
+  return { found: true, ...view, newerToken };
 }
 
 /** Records that the link was opened: first view once, last view every time. Only for a live link. */

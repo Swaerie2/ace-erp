@@ -97,6 +97,7 @@ export async function reverseAcceptance(
       acceptedByStaffId: null,
       acceptedIp: null,
       acceptedUserAgent: null,
+      acceptedByContactId: null,
       reversedAt: new Date(),
       reversalNote: text,
     },
