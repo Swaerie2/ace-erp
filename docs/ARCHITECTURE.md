@@ -39,16 +39,16 @@ There is deliberately **no separate API server**: each app runs its own server-s
 
 Each module is built, tested and approved before the next begins.
 
-| #   | Module                       | Delivers                                                                                            |
-| --- | ---------------------------- | --------------------------------------------------------------------------------------------------- |
-| 0   | Foundation                   | Project, checks, staff sign-in and roles, audit log, backups, email, error alerts                   |
-| 1   | Customers                    | Client profiles, properties, contacts, notes, import from a spreadsheet                             |
-| 2   | Services catalogue           | The list of services quotes are built from (no prices: each client is quoted)                       |
-| 3   | Quotes                       | 3a built (builder, PDF, accept by staff); 3b (client link) built                                    |
-| 4   | Client portal and onboarding | Built: sign-in by emailed code, welcome page, quotes with accept/decline, My complexes for agencies |
-| 5   | Invoices and statements      | EFT invoices with payment reference, mark paid, proof of payment, statements                        |
-| 6   | Jobs and scheduling          | Recurring weekly rounds, crew allocation                                                            |
-| 7+  | Extras                       | Card payments, accounting export, field app, WhatsApp, reports                                      |
+| #   | Module                       | Delivers                                                                                                                    |
+| --- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 0   | Foundation                   | Project, checks, staff sign-in and roles, audit log, backups, email, error alerts                                           |
+| 1   | Customers                    | Client profiles, properties, contacts, notes, import from a spreadsheet                                                     |
+| 2   | Services catalogue           | The list of services quotes are built from (no prices: each client is quoted)                                               |
+| 3   | Quotes                       | 3a built (builder, PDF, accept by staff); 3b (client link) built                                                            |
+| 4   | Client portal and onboarding | Built: sign-in by emailed code, welcome page, quotes with accept/decline, My complexes for agencies                         |
+| 5   | Invoices and statements      | 5a built (staff): Pre or Post billing, monthly run, EFT invoices with PDF and email, payments, statements; 5b (portal) next |
+| 6   | Jobs and scheduling          | Recurring weekly rounds, crew allocation                                                                                    |
+| 7+  | Extras                       | Card payments, accounting export, field app, WhatsApp, reports                                                              |
 
 Requirements carried forward to later modules:
 
@@ -417,6 +417,141 @@ These apply to every module. A module is not finished until it follows all of th
       is set, stays after a page reload, and is cleared by Sign out.
 - [ ] Send one real sign-in email to an inbox you control and check it arrives (not in spam) and the
       code works.
+
+## Invoices, payments and statements (Module 5a, staff side)
+
+- **Where the code lives.** `packages/core/src/invoices/`: small pure files with their own tests (`dates.ts`
+  for run month, service month, due dates and part months; `money.ts` for totals, balances, statuses and
+  allocation suggestions; `reference.ts`; `statement-math.ts`; `schemas.ts`), the shared helpers (`store.ts`:
+  locks, allocated sums, audit lines) and the staff functions (`settings.ts`, `drafts.ts`, `run.ts`,
+  `issue.ts`, `payments.ts`, `reports.ts`, `statements.ts`, `document.ts`, `emails.ts`, `activity.ts`), each
+  taking `(store, actor, ...)` with the role check first. Changing Invoice settings is owner only; everything
+  else is owner and manager; crew never see invoices. The screens are `/invoices`, `/payments`,
+  `/payments/reports`, `/statements`, `/settings/invoices` and the Invoices tab on the customer page.
+- **Pre or Post.** Each customer has a Billing timing switch (default Pre). The run in month M bills Pre
+  clients for month M+1 (due the last day of M) and Post clients for month M (due the 25th of M). The run
+  month can be any month from 12 months back up to next month.
+- **The run.** "Create this month's invoices" makes one DRAFT per customer that has a monthly agreement in
+  force (leads, paused, archived and anonymised customers are skipped), each customer in its own
+  transaction. Lines come from the accepted quote (priced monthly lines and chosen monthly options, labelled
+  with the property). The agreement billed for a property is the one in force for the month: the old price
+  carries on until the month the replacement quote starts, and that whole month is billed at the new price.
+  Only a property's first agreement is charged by days when it starts after the 1st. Each overdue issued
+  invoice with a balance and no fee yet gets a suggested late payment fee line (amount in settings, 0
+  switches it off). Running it twice makes no duplicates (a partial unique index guards it). It is one
+  function, so a later automatic switch can call it.
+- **Issue.** Gives the number `INV-<year>-<0001>` from an atomic yearly counter, freezes the recipient (the
+  bill-to customer: the agency when the complex's bills go to it), ACE's bank and company details
+  (including the address) and the total, and stores a fingerprint (`contentHash`). "Issue all drafts" does
+  at most 50 drafts per press in the staff app. The email (one per address of the payer's contacts who
+  receive invoices, every PDF of that issue attached, split into several emails above 20 files or 15 MB) is
+  sent after the response with `after()`; a failure never undoes the issue, is noted on the invoice and in
+  its history, and Resend email sends it again. Only Draft, Issued and Void are stored; Unpaid, Part paid,
+  Paid and Overdue are worked out from the balance and the due date (South African time).
+- **Payments.** EFT only. Staff record the date, amount, bank reference and note, and allocate to the payer's
+  issued invoices. Core never allocates by itself: the payment form has a "Fill oldest first" button that
+  spreads the amount, and staff can change every box. Money not allocated is credit on account. A voided
+  payment keeps its allocations as history but they stop counting. An invoice with live allocations cannot
+  be voided.
+- **Lock order** everywhere: customers (smaller id first), then invoices (by id), then the payment, then the
+  payment report; every write re-reads and re-checks after the locks.
+- **Reported payments.** The `payment_reports` table exists; stage 5b's portal "I have paid" writes it. Staff
+  confirm (this records the payment in the same step) or dismiss.
+- **Statements** are worked out on demand for the paying customer and a period (opening balance, invoices,
+  payments, closing balance, credit, what is still owed, and a per-complex breakdown for an agency), on
+  screen and as a PDF. Allocations have no date of their own, so each one counts from the date its payment
+  arrived: a statement printed again after money was allocated later can differ from the earlier print.
+- **Documents.** Invoice and statement screens and PDFs are built from one document object (`document.ts`),
+  which carries the frozen company address and the logo's version. The logo picture is added by the app
+  (see Company profile below).
+- **Privacy.** Anonymising a customer keeps invoice numbers, dates, amounts and allocations, clears the frozen
+  recipient, void reasons, payment references and notes and report references, replaces line wording with a
+  fixed word, and deletes its drafts. The export includes its invoices, payments and reports (without ACE's
+  bank snapshot). Audit lines hold ids, counts and fixed words only. The portal's database login has no
+  access to any invoice table yet (stage 5b adds exactly what the portal needs).
+- **Database tests** run three files at a time by default (`packages/core/scripts/test-db.mjs`;
+  `ACE_DB_TEST_WORKERS` from 2 to 8 sets another number, 1 runs one file at a time): files that issue quote
+  or invoice numbers hold the counter row lock for a whole rolled-back test, and with many files at once
+  they can time out. If a counter-row timeout appears, run that file alone.
+
+### Known limitations and follow-ups
+
+- Annual escalation is manual: revise the accepted quote or edit the drafts.
+- Only void-and-reissue corrects an issued invoice; there are no credit notes.
+- The run skips a client who is paused when it runs but cannot know about a pause part way through the
+  month; the owner reviews the drafts.
+- A Pre client whose service started before the first service month is not charged for that earlier part
+  month automatically: the "First month" warning on the draft says to check it.
+- The late fee suggestion on a draft looks at the overdue invoices of the customer being invoiced (the
+  complex), not at everything its agency owes. The owner reviews the fee line.
+- Statements are on demand only and are not emailed; credit on account is shown but never refunded or
+  applied automatically.
+- There is no fully automatic run on the 20th yet (the run is one function, ready for a switch).
+- An anonymised customer's invoices and payments are frozen: they cannot be voided, allocated or issued
+  against. The fingerprint (`contentHash`) of an anonymised invoice no longer matches its contents, so a
+  future "verify" feature must treat those invoices as unverifiable. A payment reference or note typed for
+  an agency may still name an anonymised complex (kept on purpose).
+- The Invoices list works out Unpaid, Overdue and Paid over the newest 2000 invoices that match the
+  search, so very old unpaid invoices can drop out of those filters after a year or more of invoicing.
+  The reported payments list shows the newest 200.
+- Payment reports ("I have paid") and every portal invoice page are stage 5b. A report for an invoice that
+  was voided later can still be confirmed (the money becomes credit).
+- Emails are sent one after the other inside `after()`, so a very large batch could outlast the hosting
+  time limit; this is why Issue all stops at 50 per press. The invoice page shows whether an invoice was
+  emailed, and Resend email sends it again.
+- The "How to pay" bank block still prints on void and paid invoices.
+
+### Before real customer data goes in
+
+- [ ] The owner enters ACE's bank details (bank, account holder, account number, branch code, account type)
+      in Invoice settings before the first issue. Check the once-off due days (14) and the late fee (R100).
+- [ ] The owner uploads the company logo and enters the company address in Company profile (documents
+      issued before the address is entered keep none).
+- [ ] The Module 4 email checklist applies: Resend domain, `RESEND_API_KEY` and `EMAIL_FROM` in the hosting
+      settings of the staff app (it sends the invoices).
+- [ ] Send one real invoice email with its PDF to an inbox you control and check it arrives (not in spam)
+      and the PDF opens.
+- [ ] Open one invoice PDF and one quote PDF made after that and check that both show the logo and the
+      company address.
+
+## Company profile (logo and address)
+
+- **Where the code lives.** `packages/core/src/company/` (`logo.ts` checks the picture, `profile.ts` holds the
+  staff functions and the logo reads, `address.ts` and `format.ts` the address). The owner uses
+  `/settings/company` (owner only; the menu shows it to the owner). The staff app serves the picture at
+  `/company-logo` (owner and manager, private cache) and the portal at its own `/company-logo` (public and
+  cacheable: a logo is not secret and the private quote link has no sign-in). Both add a `?v=<version>`
+  address so a replaced logo shows at once.
+- **The logo** is kept in its own one-row table, `company_logo` (migration
+  `20261127150000_company_profile`), apart from `organisation_settings` so the bytes are never read by
+  accident. PNG or JPEG only, at most 500 KB, 32 to 4000 pixels wide and high. The type is decided from the
+  file's own first bytes, never the file name, and a damaged-file check refuses a picture that is cut off
+  (a PNG without its end chunk, a JPEG without its end marker). No SVG. The database refuses anything else
+  too. The `ace_portal` login may read only that table's columns (the one addition to the frozen portal
+  grants catalogue); it still has no access to `organisation_settings`.
+- **Live logo, frozen address.** The logo is read live: an old invoice printed again after the logo changed
+  shows the new logo. The company address and details (and the bank details) are frozen on each invoice when
+  it is issued and in each quote's wording when it is issued, so an older document keeps the address it was
+  issued with, and one issued before an address was entered has none. A blank address is left out of the
+  fingerprint, so documents issued without one hash as they did before.
+- **PDFs.** The document objects carry the address (invoices and statements also the logo's version),
+  never the picture. The app reads the logo bytes separately for each PDF (`getLogoForPdf` for staff,
+  `getLogoForClientPdf` from `@ace/core/portal` for the portal) and hands them to the PDF layout. The invoice
+  emails use the same logo in their attached PDFs. If the logo cannot be read or breaks the PDF, the PDF is
+  made again without a logo (only fixed words are logged), so a bad logo never stops an invoice, statement
+  or quote PDF. Emails themselves stay plain text.
+- **Privacy and audit.** The address and logo are business details, not personal data. Audit lines
+  (`company.logo_set`, `company.logo_removed`, `company.address_changed`) hold the picture type and size or
+  the names of the changed fields, never the address or the picture.
+- **Company details** (legal and trading name, registration number, phone, email, website) are shown on the
+  page for reference. The registration number, phone, email and website are still edited in Quote
+  wording; the two names cannot be changed in the app.
+
+### Known limitations and follow-ups
+
+- A phone photo's rotation flag (EXIF) is not applied, and a lossless JPEG is refused: save the logo again
+  as a plain PNG or JPEG.
+- A file with extra bytes after the end of the picture is refused as damaged; saving it again fixes it.
 
 ## Working agreement
 

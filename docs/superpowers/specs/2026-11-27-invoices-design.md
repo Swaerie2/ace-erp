@@ -1,6 +1,6 @@
 # Module 5: Invoices, payments and statements
 
-Status: design approved by the owner in three parts (2026-11-27), written spec awaiting review.
+Status: Stage 5a (staff side) implemented, browser check pending (branch module-5-invoices). Stage 5b (portal) not started. Design approved by the owner in three parts (2026-11-27).
 
 ## Goal
 
