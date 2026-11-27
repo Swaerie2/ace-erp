@@ -1,4 +1,5 @@
 import { recordAudit, staffParty } from "../audit";
+import { companyAddressFromSettings } from "../company/format";
 import { assertRole, DomainError, MANAGEMENT, OWNER_ONLY, type Actor } from "../customers/access";
 import { formatCustomerNumber } from "../customers/number";
 import { changedFields, lockCustomer, logCustomerEvent } from "../customers/store";
@@ -143,7 +144,11 @@ export async function setBillingTiming(
   });
 }
 
-/** ACE's details as printed on an invoice. No role check: core use only (not in the barrel). */
+/**
+ * ACE's details as printed on an invoice. No role check: core use only (not in the barrel). The issued
+ * invoice's content hash covers this snapshot, so a blank company address leaves the `address` key out
+ * (never `address: null`): an invoice with no address hashes exactly as it did before addresses existed.
+ */
 export async function buildInvoiceSnapshot(
   store: Pick<Db, "organisationSettings" | "quoteWording">,
   settings: InvoiceSettingsRow,
@@ -151,8 +156,17 @@ export async function buildInvoiceSnapshot(
 ): Promise<InvoiceSnapshot> {
   const org = await store.organisationSettings.findUniqueOrThrow({
     where: { id: "singleton" },
-    select: { legalName: true, tradingName: true },
+    select: {
+      legalName: true,
+      tradingName: true,
+      addressLine1: true,
+      addressLine2: true,
+      addressSuburb: true,
+      addressCity: true,
+      addressPostalCode: true,
+    },
   });
+  const address = companyAddressFromSettings(org);
   const wording = await readQuoteWording(store);
   return {
     bank: {
@@ -169,6 +183,7 @@ export async function buildInvoiceSnapshot(
       phone: wording.phone,
       email: wording.email,
       website: wording.website,
+      ...(address === null ? {} : { address }),
     },
     paymentReference: formatCustomerNumber(billToNumber),
   };

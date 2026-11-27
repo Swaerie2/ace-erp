@@ -108,6 +108,33 @@ describe.skipIf(!dbTestsEnabled)("invoice snapshot", () => {
       expect(snapshot.business.legalName.length).toBeGreaterThan(0);
     });
   });
+
+  it("carries the company address when there is one, and leaves it out when it is blank", async () => {
+    await withRollback(async (tx) => {
+      const setAddress = (line1: string, postalCode: string) =>
+        tx.organisationSettings.update({
+          where: { id: "singleton" },
+          data: {
+            addressLine1: line1,
+            addressLine2: "",
+            addressSuburb: "",
+            addressCity: "",
+            addressPostalCode: postalCode,
+          },
+          select: { id: true },
+        });
+      const settings = await readInvoiceSettings(tx);
+      await setAddress("", "");
+      const blank = await buildInvoiceSnapshot(tx, settings, 1);
+      expect(Object.keys(blank.business)).not.toContain("address");
+      await setAddress("1 ZZ Test Road", "0000");
+      const withAddress = await buildInvoiceSnapshot(tx, settings, 1);
+      expect(withAddress.business.address).toBe("1 ZZ Test Road, 0000");
+      expect(invoiceSnapshotSchema.parse(withAddress)).toEqual(withAddress);
+      // A snapshot frozen before addresses existed still parses.
+      expect(invoiceSnapshotSchema.parse(JSON.parse(JSON.stringify(blank)))).toEqual(blank);
+    });
+  });
 });
 
 describe.skipIf(!dbTestsEnabled)("billing timing", () => {

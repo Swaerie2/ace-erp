@@ -44,6 +44,39 @@ describe.skipIf(!dbTestsEnabled)("issuing quotes", () => {
     });
   });
 
+  it("freezes the company address into the wording, and leaves it out when there is none", async () => {
+    await withRollback(async (tx) => {
+      const setAddress = (line1: string, city: string) =>
+        tx.organisationSettings.update({
+          where: { id: "singleton" },
+          data: {
+            addressLine1: line1,
+            addressLine2: "",
+            addressSuburb: "",
+            addressCity: city,
+            addressPostalCode: "",
+          },
+          select: { id: true },
+        });
+      await setAddress("", "");
+      const plain = await findQuote(tx, (await makeIssued(tx)).id);
+      const plainSnapshot = plain.wordingSnapshot as { business: Record<string, unknown> };
+      expect(Object.keys(plainSnapshot.business)).not.toContain("address");
+
+      await setAddress("1 ZZ Test Road", "Testcity");
+      const withAddress = await findQuote(tx, (await makeIssued(tx)).id);
+      expect(wordingSnapshotSchema.parse(withAddress.wordingSnapshot).business.address).toBe(
+        "1 ZZ Test Road, Testcity",
+      );
+      // Changing the address later does not touch an issued quote.
+      await setAddress("2 ZZ Other Road", "Othercity");
+      const again = await findQuote(tx, withAddress.id);
+      expect(wordingSnapshotSchema.parse(again.wordingSnapshot).business.address).toBe(
+        "1 ZZ Test Road, Testcity",
+      );
+    });
+  });
+
   it("explains in plain words why an incomplete draft cannot be issued", async () => {
     await withRollback(async (tx) => {
       const c = await makeCustomer(tx);

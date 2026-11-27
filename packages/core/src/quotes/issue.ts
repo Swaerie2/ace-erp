@@ -134,7 +134,19 @@ export async function issueQuote(
     .filter(Boolean)
     .join(", ");
 
-  const org = await store.organisationSettings.findUniqueOrThrow({ where: { id: "singleton" } });
+  const org = await store.organisationSettings.findUniqueOrThrow({
+    where: { id: "singleton" },
+    select: {
+      legalName: true,
+      tradingName: true,
+      vatEnabled: true,
+      addressLine1: true,
+      addressLine2: true,
+      addressSuburb: true,
+      addressCity: true,
+      addressPostalCode: true,
+    },
+  });
   const snapshot = snapshotWording(await readQuoteWording(store), quote.lines, org);
   const recipient = { name: contact.name, email: contact.email, phone: contact.phone };
   const hash = contentHash({

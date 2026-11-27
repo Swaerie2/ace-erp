@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { companyAddressFromSettings } from "../company/format";
 
 const tooLong = (max: number) => `Keep this to ${max} characters or fewer.`;
 const tooMany = (max: number) => `Add at most ${max} items.`;
@@ -112,21 +113,38 @@ export const wordingSnapshotSchema = z.object({
     phone: z.string(),
     email: z.string(),
     website: z.string(),
+    /** The company address as one line. Absent on quotes issued before it existed, and when it is blank. */
+    address: z.string().nullish(),
   }),
   vatEnabled: z.boolean(),
 });
 export type WordingSnapshot = z.output<typeof wordingSnapshotSchema>;
 
+/** organisation_settings as the snapshot needs it. The address columns are optional for older callers. */
+export type SnapshotOrg = {
+  legalName: string;
+  tradingName: string;
+  vatEnabled: boolean;
+  addressLine1?: string;
+  addressLine2?: string;
+  addressSuburb?: string;
+  addressCity?: string;
+  addressPostalCode?: string;
+};
+
 /**
  * The frozen wording for one quote: the terms that apply to the kinds of work on it (monthly,
  * once-off or both, an optional add-on counts), plus the common clauses, the exclusions, the
- * every-visit points and the business details.
+ * every-visit points and the business details. The quote's content hash covers this snapshot, so a blank
+ * address leaves the `address` key OUT (never `address: null`): the snapshot, and the hash, of a quote with
+ * no company address stay exactly what they were before addresses existed.
  */
 export function snapshotWording(
   wording: WordingInput,
   lines: readonly { lineKind: string; billing: string | null }[],
-  org: { legalName: string; tradingName: string; vatEnabled: boolean },
+  org: SnapshotOrg,
 ): WordingSnapshot {
+  const address = companyAddressFromSettings(org);
   const priced = lines.filter((l) => l.lineKind !== "INCLUDED");
   const hasMonthly = priced.some((l) => l.billing === "MONTHLY");
   const hasOnceOff = priced.some((l) => l.billing === "ONCE_OFF");
@@ -146,6 +164,7 @@ export function snapshotWording(
       phone: wording.phone,
       email: wording.email,
       website: wording.website,
+      ...(address === null ? {} : { address }),
     },
     vatEnabled: org.vatEnabled,
   };

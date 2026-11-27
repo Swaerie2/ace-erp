@@ -34,7 +34,8 @@ export type QuoteDocument = {
   issuedDate: string | null;
   validUntil: string;
   tagline: string;
-  business: WordingSnapshot["business"];
+  /** `address` is the frozen company address, null for quotes issued before it existed. */
+  business: Omit<WordingSnapshot["business"], "address"> & { address: string | null };
   preparedFor: DocumentInput["preparedFor"];
   summary: {
     monthlyTotal: string | null;
@@ -104,7 +105,7 @@ export function buildQuoteDocument(input: DocumentInput): QuoteDocument {
     issuedDate: input.issuedDate,
     validUntil: input.validUntil,
     tagline: input.wording.tagline,
-    business: input.wording.business,
+    business: { ...input.wording.business, address: input.wording.business.address ?? null },
     preparedFor: input.preparedFor,
     summary: {
       monthlyTotal: orNull(totals.monthly),

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { contentHash } from "./content";
 import {
   bulletLines,
   DEFAULT_WORDING,
@@ -80,6 +81,45 @@ describe("snapshotWording", () => {
     expect(snap.business.legalName).toBe("Terra Undecim Trading (Pty) Ltd");
     expect(snap.vatEnabled).toBe(false);
     expect(wordingSnapshotSchema.parse(JSON.parse(JSON.stringify(snap)))).toEqual(snap);
+  });
+  it("freezes the company address as one line when there is one", () => {
+    const snap = snapshotWording(DEFAULT_WORDING, [priced("MONTHLY")], {
+      ...org,
+      addressLine1: "1 ZZ Test Road",
+      addressLine2: "",
+      addressSuburb: "Testville",
+      addressCity: "Testcity",
+      addressPostalCode: "0000",
+    });
+    expect(snap.business.address).toBe("1 ZZ Test Road, Testville, Testcity, 0000");
+    expect(wordingSnapshotSchema.parse(JSON.parse(JSON.stringify(snap)))).toEqual(snap);
+  });
+  it("leaves the address key out when the address is blank, so the quote fingerprint is unchanged", () => {
+    const blank = {
+      addressLine1: " ",
+      addressLine2: "",
+      addressSuburb: "",
+      addressCity: "",
+      addressPostalCode: "",
+    };
+    for (const orgRow of [org, { ...org, ...blank }]) {
+      const snap = snapshotWording(DEFAULT_WORDING, [priced("MONTHLY")], orgRow);
+      expect(Object.keys(snap.business)).not.toContain("address");
+      // The hash the same quote content had before addresses existed (computed with the old code).
+      expect(contentHash({ reference: { year: 2026, seq: 1, revision: 0 }, wording: snap })).toBe(
+        "c68769809b06f48e1102e402a089dbbc5aaab4c8d6a486ec09d46bc8a716ea54",
+      );
+    }
+  });
+  it("still reads an older frozen snapshot that has no address, without changing its fingerprint", () => {
+    const old = snapshotWording(DEFAULT_WORDING, [priced("MONTHLY")], org);
+    const stored = JSON.parse(JSON.stringify(old)) as unknown;
+    const parsed = wordingSnapshotSchema.parse(stored);
+    expect(parsed.business.address ?? null).toBeNull();
+    expect(contentHash(parsed)).toBe(contentHash(stored));
+    // An explicit null (never written by the app) also parses.
+    const withNull = { ...old, business: { ...old.business, address: null } };
+    expect(wordingSnapshotSchema.parse(withNull).business.address).toBeNull();
   });
 });
 
