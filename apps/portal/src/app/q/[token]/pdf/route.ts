@@ -1,6 +1,5 @@
 import { checkRateLimit, getPortalDb, getPublicQuote } from "@ace/core";
-import { QuotePdf } from "@ace/ui/quote-pdf";
-import { renderToBuffer } from "@react-pdf/renderer";
+import { renderQuotePdf } from "@/lib/logo";
 import { getVisitor } from "@/lib/visitor";
 
 export const dynamic = "force-dynamic";
@@ -27,10 +26,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
   if (!quote.found || !allowed.includes(quote.state)) {
     return new Response("Not found", { status: 404, headers: NO_STORE });
   }
-  // Called as a function so the element is typed as the Document renderToBuffer expects (QuotePdf stays hook-free).
-  const buffer = await renderToBuffer(QuotePdf({ doc: quote.doc }));
+  // With the company logo when there is one; a bad logo falls back to a PDF without it.
+  const bytes = await renderQuotePdf(quote.doc);
   const filename = `${quote.reference.replaceAll(" ", "-")}.pdf`;
-  return new Response(new Uint8Array(buffer), {
+  return new Response(bytes, {
     headers: {
       ...NO_STORE,
       "Content-Type": "application/pdf",

@@ -355,7 +355,7 @@ export function QuoteBuilder({ initial }: { initial: BuilderInitial }) {
                 Ready to issue.
               </p>
             )}
-            <QuoteDocumentView doc={doc} />
+            <QuoteDocumentView doc={doc} logoSrc={initial.logoSrc} />
             {issueState?.error ? (
               <p
                 role="alert"

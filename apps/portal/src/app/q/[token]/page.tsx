@@ -7,6 +7,7 @@ import { BarePage, Contact, Notice, PageShell, TooManyRequests } from "@/compone
 import { AcceptForm } from "@/components/quote-forms/accept-form";
 import { DeclineForm } from "@/components/quote-forms/decline-form";
 import { AcceptedNotice, PdfLink } from "@/components/quote-outcome";
+import { logoSrc as readLogoSrc } from "@/lib/logo";
 import { getVisitor } from "@/lib/visitor";
 import { acceptAction, declineAction } from "./actions";
 
@@ -34,6 +35,7 @@ export default async function QuoteLinkPage({ params }: { params: Promise<{ toke
   await recordLinkView(db, token);
 
   const pdfHref = `/q/${encodeURIComponent(token)}/pdf`;
+  const logoSrc = await readLogoSrc();
   const contact = <Contact phone={quote.business.phone} email={quote.business.email} />;
 
   switch (quote.state) {
@@ -71,7 +73,7 @@ export default async function QuoteLinkPage({ params }: { params: Promise<{ toke
       return (
         <PageShell>
           <AcceptedNotice acceptance={quote.acceptance} pdfHref={pdfHref} />
-          <QuoteDocumentView doc={quote.doc} />
+          <QuoteDocumentView doc={quote.doc} logoSrc={logoSrc} />
         </PageShell>
       );
     case "EXPIRED":
@@ -81,13 +83,13 @@ export default async function QuoteLinkPage({ params }: { params: Promise<{ toke
             <p>Please contact ACE Garden Services.</p>
             {contact}
           </Notice>
-          <QuoteDocumentView doc={quote.doc} />
+          <QuoteDocumentView doc={quote.doc} logoSrc={logoSrc} />
         </PageShell>
       );
     case "OPEN":
       return (
         <PageShell>
-          <QuoteDocumentView doc={quote.doc} />
+          <QuoteDocumentView doc={quote.doc} logoSrc={logoSrc} />
           <p>
             <PdfLink href={pdfHref} />
           </p>

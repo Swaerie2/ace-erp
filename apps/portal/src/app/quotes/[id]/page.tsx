@@ -9,6 +9,7 @@ import { AcceptForm } from "@/components/quote-forms/accept-form";
 import { DeclineForm } from "@/components/quote-forms/decline-form";
 import { AcceptedNotice, PdfLink } from "@/components/quote-outcome";
 import { SignedInShell } from "@/components/signed-in-shell";
+import { logoSrc as readLogoSrc } from "@/lib/logo";
 import { requireSession } from "@/lib/session";
 import { acceptPortalQuoteAction, declinePortalQuoteAction } from "./actions";
 
@@ -28,6 +29,7 @@ export default async function PortalQuotePage({ params }: { params: Promise<{ id
   if (!quote) notFound();
 
   const pdfHref = `/quotes/${encodeURIComponent(quote.id)}/pdf`;
+  const logoSrc = await readLogoSrc();
   const contact = <Contact phone={quote.business.phone} email={quote.business.email} />;
   const back = (
     <Link
@@ -45,7 +47,7 @@ export default async function PortalQuotePage({ params }: { params: Promise<{ id
         <SignedInShell>
           {back}
           <AcceptedNotice acceptance={quote.acceptance} pdfHref={pdfHref} />
-          <QuoteDocumentView doc={quote.doc} />
+          <QuoteDocumentView doc={quote.doc} logoSrc={logoSrc} />
         </SignedInShell>
       );
     case "DECLINED":
@@ -59,7 +61,7 @@ export default async function PortalQuotePage({ params }: { params: Promise<{ id
           <p>
             <PdfLink href={pdfHref} />
           </p>
-          <QuoteDocumentView doc={quote.doc} />
+          <QuoteDocumentView doc={quote.doc} logoSrc={logoSrc} />
         </SignedInShell>
       );
     case "EXPIRED":
@@ -70,14 +72,14 @@ export default async function PortalQuotePage({ params }: { params: Promise<{ id
             <p>Please contact ACE Garden Services.</p>
             {contact}
           </Notice>
-          <QuoteDocumentView doc={quote.doc} />
+          <QuoteDocumentView doc={quote.doc} logoSrc={logoSrc} />
         </SignedInShell>
       );
     case "OPEN":
       return (
         <SignedInShell>
           {back}
-          <QuoteDocumentView doc={quote.doc} />
+          <QuoteDocumentView doc={quote.doc} logoSrc={logoSrc} />
           <p>
             <PdfLink href={pdfHref} />
           </p>
