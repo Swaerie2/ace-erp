@@ -39,3 +39,4 @@ export * from "./customers";
 export * from "./services";
 export * from "./quotes";
 export * from "./invoices";
+export * from "./company";
