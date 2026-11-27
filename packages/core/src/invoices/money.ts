@@ -12,7 +12,7 @@ export function parseSignedRandToCents(input: string): number | null {
   const negative = text.startsWith("-");
   const cents = parseRandToCents(negative ? text.slice(1) : text);
   if (cents === null) return null;
-  return negative ? -cents : cents;
+  return negative && cents !== 0 ? -cents : cents;
 }
 
 export function sumLineCents(lines: readonly { amountCents: number }[]): number {

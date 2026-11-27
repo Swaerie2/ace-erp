@@ -50,7 +50,12 @@ export function dueDateFor(runMonth: string, timing: BillingTiming): string {
 
 /**
  * The part-month amount when a service starts inside the service month after the 1st: the days from the
- * start date to the month end, over the days in the month, rounded to the cent. Null when it does not apply.
+ * start date to the month end, over the days in the month, rounded to the cent. A positive amount never
+ * rounds down to 0 cents (at least 1 cent is charged).
+ *
+ * Returns null for the "full month" cases: the start is on or before the 1st of the service month, or before
+ * the service month. The CALLER must skip the agreement altogether when the start date is after the service
+ * month (null does not mean "charge in full" then).
  */
 export function proRata(
   amountCents: number,
@@ -62,7 +67,12 @@ export function proRata(
   if (startDay <= 1) return null;
   const dim = daysInMonth(serviceMonth);
   const days = dim - startDay + 1;
-  return { amountCents: Math.round((amountCents * days) / dim), days, daysInMonth: dim };
+  const rounded = Math.round((amountCents * days) / dim);
+  return {
+    amountCents: amountCents > 0 ? Math.max(1, rounded) : rounded,
+    days,
+    daysInMonth: dim,
+  };
 }
 
 /** A run month from 12 months before the current month up to next month. */

@@ -16,6 +16,11 @@ describe("parseSignedRandToCents", () => {
     expect(parseSignedRandToCents("-100")).toBe(-10000);
     expect(parseSignedRandToCents(" -R50.5 ")).toBe(-5050);
   });
+  it("never returns negative zero", () => {
+    // toBe uses Object.is, so -0 would fail here
+    expect(parseSignedRandToCents("-0")).toBe(0);
+    expect(parseSignedRandToCents("-0.00")).toBe(0);
+  });
   it("refuses anything that is not an amount", () => {
     for (const bad of ["", "-", "abc", "1.234", "--5", "12-"]) {
       expect(parseSignedRandToCents(bad), bad).toBeNull();

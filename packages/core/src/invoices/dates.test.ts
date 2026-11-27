@@ -43,6 +43,10 @@ describe("months", () => {
     expect(currentMonthSA(new Date("2026-12-31T22:30:00Z"))).toBe("2027-01");
     expect(currentMonthSA(new Date("2026-11-27T10:00:00Z"))).toBe("2026-11");
   });
+  it("switches month at 22:00 UTC, which is midnight in South Africa", () => {
+    expect(currentMonthSA(new Date("2026-11-30T21:59:00Z"))).toBe("2026-11");
+    expect(currentMonthSA(new Date("2026-11-30T22:00:00Z"))).toBe("2026-12");
+  });
 });
 
 describe("the run on the 20th", () => {
@@ -52,6 +56,7 @@ describe("the run on the 20th", () => {
     expect(serviceMonthFor("2026-12", "PRE")).toBe("2027-01");
     expect(dueDateFor("2026-12", "PRE")).toBe("2026-12-31");
     expect(dueDateFor("2028-02", "PRE")).toBe("2028-02-29");
+    expect(dueDateFor("2027-02", "PRE")).toBe("2027-02-28");
   });
   it("Post clients: this month's service, due the 25th", () => {
     expect(serviceMonthFor("2026-11", "POST")).toBe("2026-11");
@@ -87,6 +92,28 @@ describe("proRata", () => {
       amountCents: 1000,
       days: 1,
       daysInMonth: 29,
+    });
+  });
+  it("handles a start on the 2nd and on the 31st of a 31-day month", () => {
+    // 2 Dec: 30 of 31 days
+    expect(proRata(31000, "2026-12-02", "2026-12")).toEqual({
+      amountCents: 30000,
+      days: 30,
+      daysInMonth: 31,
+    });
+    // 31 Dec: 1 of 31 days
+    expect(proRata(31000, "2026-12-31", "2026-12")).toEqual({
+      amountCents: 1000,
+      days: 1,
+      daysInMonth: 31,
+    });
+  });
+  it("never charges nothing for a positive amount", () => {
+    // 1 cent for 1 day of 31 rounds to 0, but at least 1 cent is charged
+    expect(proRata(1, "2026-12-31", "2026-12")).toEqual({
+      amountCents: 1,
+      days: 1,
+      daysInMonth: 31,
     });
   });
   it("is not used when the start is the 1st or outside the service month", () => {
