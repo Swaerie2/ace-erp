@@ -66,6 +66,11 @@ async function grantsOfPortal(tx: Tx): Promise<string[]> {
 const EXPECTED_PORTAL_GRANTS: string[] = [
   "public.audit_log.id:SELECT",
   "public.audit_log:INSERT",
+  "public.company_logo.byteSize:SELECT",
+  "public.company_logo.contentType:SELECT",
+  "public.company_logo.data:SELECT",
+  "public.company_logo.id:SELECT",
+  "public.company_logo.updatedAt:SELECT",
   "public.contacts.customerId:SELECT",
   "public.contacts.email:SELECT",
   "public.contacts.id:SELECT",

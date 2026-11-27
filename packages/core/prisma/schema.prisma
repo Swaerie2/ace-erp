@@ -32,19 +32,25 @@ enum AuditActorType {
 
 /// Exactly one row (id = "singleton"). Business-wide settings.
 model OrganisationSettings {
-  id            String   @id @default("singleton")
-  tradingName   String
-  legalName     String
-  currency      String   @default("ZAR")
+  id                String   @id @default("singleton")
+  tradingName       String
+  legalName         String
+  currency          String   @default("ZAR")
   /// ACE is not VAT registered. The switch exists so VAT can be turned on later
   /// without rebuilding anything. While false, no VAT appears anywhere.
-  vatEnabled    Boolean  @default(false)
+  vatEnabled        Boolean  @default(false)
   /// VAT rate in basis points (1500 = 15%). Ignored while vatEnabled is false.
-  vatRateBps    Int      @default(0)
-  quotePrefix   String   @default("Q")
-  invoicePrefix String   @default("INV")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  vatRateBps        Int      @default(0)
+  quotePrefix       String   @default("Q")
+  invoicePrefix     String   @default("INV")
+  /// The company's own physical address as printed on documents (not a person's address). Empty until entered.
+  addressLine1      String   @default("")
+  addressLine2      String   @default("")
+  addressSuburb     String   @default("")
+  addressCity       String   @default("")
+  addressPostalCode String   @default("")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@map("organisation_settings")
 }
@@ -554,6 +560,21 @@ model InvoiceSettings {
   updatedById    String?
 
   @@map("invoice_settings")
+}
+
+/// The company logo shown on every document. At most one row (id is always "singleton", enforced by a CHECK in
+/// the SQL migration, as are the PNG/JPEG-only content type and the size limit of 524288 bytes). No row means no
+/// logo. Read live (never frozen into a document). The ace_portal role may read it, so the portal can draw quote PDFs.
+model CompanyLogo {
+  id          String   @id @default("singleton")
+  data        Bytes
+  /// "image/png" or "image/jpeg" only.
+  contentType String
+  byteSize    Int
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+
+  @@map("company_logo")
 }
 
 /// Module 5: the last invoice number given out in each year (South African year). Taken with one atomic statement.

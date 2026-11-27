@@ -267,6 +267,16 @@ const INVOICE_COUNTER: Record<string, Rule> = {
   lastSeq: "kept: whole number",
 };
 
+// The company logo: ACE's own image, nothing about any customer.
+const COMPANY_LOGO: Record<string, Rule> = {
+  id: "kept: fixed singleton key",
+  data: "kept: ACE's own logo image, nothing about any customer",
+  contentType: "kept: image type (png or jpeg)",
+  byteSize: "kept: whole number, size of the image",
+  updatedAt: "kept: timestamp",
+  updatedById: "kept: staff id, not about the customer",
+};
+
 function check(name: string, columns: Record<string, string>, table: Record<string, Rule>) {
   describe(name, () => {
     const actual = Object.values(columns).sort();
@@ -297,4 +307,5 @@ describe("personal data coverage", () => {
   check("payment reports", Prisma.PaymentReportScalarFieldEnum, PAYMENT_REPORT);
   check("invoice settings", Prisma.InvoiceSettingsScalarFieldEnum, INVOICE_SETTINGS);
   check("invoice counters", Prisma.InvoiceCounterScalarFieldEnum, INVOICE_COUNTER);
+  check("company logo", Prisma.CompanyLogoScalarFieldEnum, COMPANY_LOGO);
 });
