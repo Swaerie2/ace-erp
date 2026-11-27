@@ -18,7 +18,16 @@ if (loaded.error) {
 const require = createRequire(import.meta.url);
 const vitestBin = join(dirname(require.resolve("vitest/package.json")), "vitest.mjs");
 
-const result = spawnSync(process.execPath, [vitestBin, "run", ".db.test.ts"], {
+// Files that issue quote or invoice numbers hold the counter row lock for a whole (rolled-back) test,
+// so parallel files queue on that row and time out. One file at a time by default; ACE_DB_TEST_WORKERS
+// (2 to 8) runs that many files at once, for measuring.
+const workers = Number(process.env.ACE_DB_TEST_WORKERS ?? "1");
+const parallel =
+  Number.isInteger(workers) && workers >= 2 && workers <= 8
+    ? [`--maxWorkers=${workers}`]
+    : ["--no-file-parallelism"];
+
+const result = spawnSync(process.execPath, [vitestBin, "run", ".db.test.ts", ...parallel], {
   cwd: join(here, ".."),
   stdio: "inherit",
   env: { ...process.env, ACE_DB_TESTS: "1" },
