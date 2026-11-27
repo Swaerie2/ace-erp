@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DomainError, ForbiddenError } from "../customers/access";
 import { auditFor, crew, manager, owner } from "../invoices/test-helpers";
-import { getLogoForClientPdf } from "../portal/logo";
+import { getLogoForClientPdf, getLogoVersionForClient } from "../portal/logo";
 import { dbTestsEnabled, withRollback } from "../testing/rollback";
 import { MAX_LOGO_BYTES } from "./logo";
 import {
@@ -272,6 +272,20 @@ describe.skipIf(!dbTestsEnabled)("the logo under the portal's database login", (
       expect(await readCompanyLogo(tx)).toEqual(asStaff);
       expect(await readCompanyLogoVersion(tx)).toBe(String(asStaff?.updatedAt.getTime()));
       expect(await getLogoForClientPdf(tx)).toEqual({ data: asStaff?.data, format: "png" });
+      await tx.$executeRawUnsafe(`RESET ROLE`);
+    });
+  });
+
+  it("ace_portal can read the logo version, and gets null when there is no logo", async () => {
+    await withRollback(async (tx) => {
+      await clean(tx);
+      await tx.$executeRawUnsafe(AS_PORTAL);
+      expect(await getLogoVersionForClient(tx)).toBeNull();
+      await tx.$executeRawUnsafe(`RESET ROLE`);
+      await setCompanyLogo(tx, owner, png());
+      const meta = await getCompanyLogoMeta(tx, owner);
+      await tx.$executeRawUnsafe(AS_PORTAL);
+      expect(await getLogoVersionForClient(tx)).toBe(String(meta?.updatedAt.getTime()));
       await tx.$executeRawUnsafe(`RESET ROLE`);
     });
   });
