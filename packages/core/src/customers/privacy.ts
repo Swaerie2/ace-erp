@@ -1,3 +1,4 @@
+import { invoiceExportFor, scrubInvoicesForAnonymise } from "../invoices/anonymise";
 import { endPortalSignIns } from "../portal/end-sign-ins";
 import { HIERARCHY_MESSAGES } from "../portal/hierarchy";
 import { assertRole, DomainError, OWNER_ONLY, type Actor } from "./access";
@@ -22,14 +23,16 @@ export async function exportCustomerData(store: Store, actor: Actor, id: string)
     orderBy: { at: "asc" },
     select: { at: true, action: true, actorType: true },
   });
+  const invoicing = await invoiceExportFor(store, id);
   await logCustomerEvent(store, actor, "customer.exported", id);
-  return { exportedAt: new Date().toISOString(), customer, activity };
+  return { exportedAt: new Date().toISOString(), customer, ...invoicing, activity };
 }
 
 /**
  * Permanently removes a customer's personal details but keeps the record, its number and any
  * money amounts, so old invoices still add up. Owner only, cannot be undone.
  * An agency that still manages complexes is refused; a complex loses its Managed by link; the contacts' portal sign-ins end.
+ * Invoices keep their numbers and amounts but lose the frozen recipient, typed wording, references and notes; drafts are deleted.
  * Call it inside one transaction (`inTx`) so the updates succeed or fail together.
  *
  * Order matters. The customer row is what carries `anonymisedAt`, so it is written LAST: if
@@ -117,6 +120,9 @@ export async function anonymiseCustomer(
       linkToken: null,
     },
   });
+
+  // Invoices, payments and reports: records kept, personal details scrubbed, drafts deleted.
+  await scrubInvoicesForAnonymise(store, id);
 
   const now = new Date();
   // Conditional, so two anonymise calls racing each other cannot both succeed.

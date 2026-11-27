@@ -14,6 +14,10 @@ export type Store = Pick<
   | "quote"
   | "portalCode"
   | "portalSession"
+  | "invoice"
+  | "invoiceLine"
+  | "payment"
+  | "paymentReport"
 >;
 
 /** Runs several writes as one all-or-nothing step. */
