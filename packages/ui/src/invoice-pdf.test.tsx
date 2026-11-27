@@ -1,7 +1,9 @@
-import type { InvoiceDocument, StatementDocument } from "@ace/core";
+import { deflateSync } from "node:zlib";
+import type { InvoiceDocument, QuoteDocument, StatementDocument } from "@ace/core";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { describe, expect, it } from "vitest";
 import { InvoicePdf, StatementPdf } from "./invoice-pdf";
+import { QuotePdf } from "./quote-pdf";
 
 // Made-up data only. These render the real PDF layouts to bytes, so a layout that throws (or a page that
 // cannot be broken) fails here and not only in the browser.
@@ -13,6 +15,7 @@ const business = {
   phone: "000 000 0000",
   email: "info@example.com",
   website: "www.example.com",
+  address: "1 ZZ Test Road, Testville, 0000",
 };
 const bank = {
   bankName: "ZZ Test Bank",
@@ -36,6 +39,7 @@ function invoice(rowCount: number, overrides: Partial<InvoiceDocument> = {}): In
     billTo: { name: "ZZ E2E Agency", address: "1 Test Road, Testville" },
     forCustomerName: "ZZ E2E Complex A",
     business,
+    logoVersion: null,
     rows: Array.from({ length: rowCount }, (_, i) => ({
       id: String(i),
       description: `Main: Weekly garden maintenance, visit ${i + 1}, including lawn, edges and beds`,
@@ -62,6 +66,7 @@ function statement(
     generatedDate: "27 Nov 2026",
     customer: { name: "ZZ E2E Agency", number: "C-0123", address: "1 Test Road, Testville" },
     business,
+    logoVersion: null,
     bank,
     bankReady: true,
     paymentReference: "C-0123",
@@ -102,6 +107,105 @@ function statement(
     ...overrides,
   };
 }
+
+function quote(overrides: Partial<QuoteDocument> = {}): QuoteDocument {
+  return {
+    reference: "QUO-2026-0104",
+    status: "ISSUED",
+    issuedDate: "20 Nov 2026",
+    validUntil: "20 Dec 2026",
+    tagline: "ZZ tagline.",
+    business,
+    preparedFor: {
+      name: "ZZ E2E Client",
+      email: "zz.client@example.com",
+      phone: null,
+      siteLabel: "Main",
+      siteAddress: "1 Test Road, Testville",
+    },
+    summary: {
+      monthlyTotal: "R1,150.00",
+      frequencyLabel: "Weekly",
+      onceOffTotal: null,
+      optionalNote: null,
+    },
+    scope: {
+      included: [{ name: "Lawn care", bullets: ["Cutting of all lawns"] }],
+      excludedNames: [],
+      standardExclusions: ["Tree work."],
+    },
+    pricing: {
+      rows: [
+        {
+          id: "l1",
+          kind: "PRICED",
+          description: "Weekly garden maintenance",
+          billingLabel: "Monthly",
+          frequencyLabel: "Weekly",
+          amountLabel: "R1,150.00",
+        },
+      ],
+      totals: {
+        monthly: "R1,150.00",
+        onceOff: null,
+        monthlyWithOptions: null,
+        onceOffWithOptions: null,
+      },
+      acceptedMonthly: null,
+      acceptedOnceOff: null,
+    },
+    termSections: [{ title: "General", clauses: [{ heading: "Payment", body: "ZZ terms." }] }],
+    everyVisitPoints: ["ZZ point."],
+    vatNote: "All amounts in ZAR.",
+    ...overrides,
+  };
+}
+
+const u32 = (n: number) => [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
+
+/** A real, decodable 40 x 40 PNG (one colour), built with zlib. */
+function tinyPng(): Uint8Array {
+  const ascii = (t: string) => [...t].map((c) => c.charCodeAt(0));
+  const crc = (bytes: number[]) => {
+    let c = 0xffffffff;
+    for (const b of bytes) {
+      c ^= b;
+      for (let k = 0; k < 8; k += 1) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1;
+    }
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type: string, data: number[]) => {
+    const body = [...ascii(type), ...data];
+    return [...u32(data.length), ...body, ...u32(crc(body))];
+  };
+  const row = [0, ...Array.from({ length: 40 }, () => [31, 77, 54]).flat()];
+  const raw = Array.from({ length: 40 }, () => row).flat();
+  return Uint8Array.from([
+    0x89,
+    0x50,
+    0x4e,
+    0x47,
+    0x0d,
+    0x0a,
+    0x1a,
+    0x0a,
+    ...chunk("IHDR", [...u32(40), ...u32(40), 8, 2, 0, 0, 0]),
+    ...chunk("IDAT", [...deflateSync(Uint8Array.from(raw))]),
+    ...chunk("IEND", []),
+  ]);
+}
+
+/** A real 40 x 40 baseline JPEG (made once with an image tool; one colour). */
+const TINY_JPEG_BASE64 =
+  "/9j/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2P/2wBDARESEhgVGC8aGi9jQjhCY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2P/wAARCAAoACgDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAb/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFgEBAQEAAAAAAAAAAAAAAAAAAAIE/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AnQEsoAAAAAAAAAAAAAAAD//Z";
+
+const LOGOS = {
+  png: { data: tinyPng(), format: "png" as const },
+  jpg: { data: Uint8Array.from(Buffer.from(TINY_JPEG_BASE64, "base64")), format: "jpg" as const },
+};
+
+/** True when the PDF embeds a picture (an image XObject). */
+const hasImage = (buffer: Buffer) => /\/Subtype \/Image/.test(buffer.toString("latin1"));
 
 /** Counts the pages of a PDF by its page objects. */
 function pageCount(buffer: Buffer): number {
@@ -182,5 +286,48 @@ describe("StatementPdf", () => {
     );
     expect(buffer.subarray(0, 4).toString("latin1")).toBe("%PDF");
     expect(pageCount(buffer)).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("the company logo on the PDFs", () => {
+  for (const [name, logo] of Object.entries(LOGOS)) {
+    it(`draws a ${name} logo on the invoice, statement and quote PDFs`, async () => {
+      for (const element of [
+        InvoicePdf({ doc: invoice(2), logo }),
+        StatementPdf({ doc: statement(4), logo }),
+        QuotePdf({ doc: quote(), logo }),
+      ]) {
+        const buffer = await renderToBuffer(element);
+        expect(buffer.subarray(0, 4).toString("latin1")).toBe("%PDF");
+        expect(hasImage(buffer)).toBe(true);
+      }
+    });
+  }
+
+  it("without a logo draws no picture and keeps the same pages", async () => {
+    const cases = [
+      [InvoicePdf({ doc: invoice(2) }), InvoicePdf({ doc: invoice(2), logo: null })],
+      [StatementPdf({ doc: statement(4) }), StatementPdf({ doc: statement(4), logo: null })],
+      [QuotePdf({ doc: quote() }), QuotePdf({ doc: quote(), logo: null })],
+    ] as const;
+    for (const [without, withNull] of cases) {
+      const a = await renderToBuffer(without);
+      const b = await renderToBuffer(withNull);
+      expect(hasImage(a)).toBe(false);
+      expect(hasImage(b)).toBe(false);
+      expect(pageCount(a)).toBe(pageCount(b));
+    }
+  });
+
+  it("prints the company address, and renders an older quote with none", async () => {
+    const plain = { ...business, address: null };
+    for (const element of [
+      InvoicePdf({ doc: invoice(1, { business: plain }) }),
+      StatementPdf({ doc: statement(1, { business: plain }) }),
+      QuotePdf({ doc: quote({ business: plain }) }),
+    ]) {
+      const buffer = await renderToBuffer(element);
+      expect(buffer.subarray(0, 4).toString("latin1")).toBe("%PDF");
+    }
   });
 });

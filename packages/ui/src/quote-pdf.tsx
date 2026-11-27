@@ -1,5 +1,6 @@
 import type { QuoteDocument } from "@ace/core";
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { LogoImage, type PdfLogo } from "./pdf-logo";
 
 const GREEN = "#1f4d36";
 const OCHRE = "#b5832a";
@@ -87,7 +88,8 @@ function Bullets({ items }: { items: string[] }) {
   );
 }
 
-export function QuotePdf({ doc }: { doc: QuoteDocument }) {
+/** `logo` is the company logo's bytes, passed apart from the document (see invoice-pdf.tsx). */
+export function QuotePdf({ doc, logo }: { doc: QuoteDocument; logo?: PdfLogo | null }) {
   const banner = BANNERS[doc.status];
   const optionalRows = doc.pricing.rows.filter((r) => r.kind === "OPTIONAL");
   return (
@@ -96,6 +98,7 @@ export function QuotePdf({ doc }: { doc: QuoteDocument }) {
       author={doc.business.tradingName}
     >
       <Page size="A4" style={s.page}>
+        <LogoImage logo={logo} />
         <Text style={s.brand}>{doc.business.tradingName.toUpperCase()}</Text>
         <Text style={s.title}>Proposal and quotation</Text>
         <Text style={s.tagline}>{doc.tagline}</Text>
@@ -121,6 +124,7 @@ export function QuotePdf({ doc }: { doc: QuoteDocument }) {
             <Text style={s.label}>PREPARED BY</Text>
             <Text style={s.strong}>{doc.business.legalName}</Text>
             <Text>t/a {doc.business.tradingName}</Text>
+            {doc.business.address ? <Text>{doc.business.address}</Text> : null}
             {doc.business.registrationNumber ? (
               <Text>Reg {doc.business.registrationNumber}</Text>
             ) : null}

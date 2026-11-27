@@ -34,6 +34,20 @@ const FROZEN = {
   paymentReference: "C-9999",
 };
 
+async function setLiveAddress(tx: Tx, line1: string) {
+  await tx.organisationSettings.update({
+    where: { id: "singleton" },
+    data: {
+      addressLine1: line1,
+      addressLine2: "",
+      addressSuburb: "",
+      addressCity: "",
+      addressPostalCode: "",
+    },
+    select: { id: true },
+  });
+}
+
 async function makeDraft(
   tx: Tx,
   input: { customerId: string; billToCustomerId: string; dueDate?: string },
@@ -100,7 +114,7 @@ describe.skipIf(!dbTestsEnabled)("invoice and statement documents", () => {
         bankReady: true,
       });
       expect(doc?.bank).toEqual(FROZEN.bank);
-      expect(doc?.business).toEqual(FROZEN.business);
+      expect(doc?.business).toEqual({ ...FROZEN.business, address: null });
       expect(doc?.issuedDate).toMatch(/20\sNov\s2026/);
       expect(doc?.dueDate).toMatch(/31\sDec\s2099/);
 
@@ -160,6 +174,64 @@ describe.skipIf(!dbTestsEnabled)("invoice and statement documents", () => {
         dueDate: "2099-01-15",
       });
       expect((await loadInvoiceDocument(tx, manager, dated))?.doc.dueDate).toMatch(/15\sJan\s2099/);
+    });
+  });
+
+  it("an issued invoice shows its FROZEN company address, a draft and a statement the live one, and all carry the logo version", async () => {
+    await withRollback(async (tx) => {
+      await fillBankDetails(tx);
+      await tx.companyLogo.deleteMany({ where: { id: "singleton" } });
+      await setLiveAddress(tx, "2 ZZ Live Road");
+      const c = await makeBillingCustomer(tx);
+      const issued = await makeIssuedInvoice(tx, {
+        customerId: c.customerId,
+        dueDate: "2099-12-31",
+      });
+      await tx.invoice.update({
+        where: { id: issued },
+        data: {
+          bankSnapshot: {
+            ...FROZEN,
+            business: { ...FROZEN.business, address: "1 ZZ Frozen Road, Frozencity" },
+          },
+        },
+        select: { id: true },
+      });
+      const draft = await makeDraft(tx, {
+        customerId: c.customerId,
+        billToCustomerId: c.customerId,
+      });
+      const period = { from: "2026-11-01", to: "2026-11-30" };
+
+      const issuedDoc = (await loadInvoiceDocument(tx, manager, issued))?.doc;
+      expect(issuedDoc?.business.address).toBe("1 ZZ Frozen Road, Frozencity");
+      expect(issuedDoc?.logoVersion).toBeNull();
+      expect((await loadInvoiceDocument(tx, manager, draft))?.doc.business.address).toBe(
+        "2 ZZ Live Road",
+      );
+      expect(
+        (await loadStatementDocument(tx, manager, c.customerId, period))?.doc.business.address,
+      ).toBe("2 ZZ Live Road");
+
+      await tx.companyLogo.create({
+        data: {
+          id: "singleton",
+          data: Uint8Array.from([1]),
+          contentType: "image/png",
+          byteSize: 1,
+        },
+        select: { id: true },
+      });
+      const logo = await tx.companyLogo.findUniqueOrThrow({
+        where: { id: "singleton" },
+        select: { updatedAt: true },
+      });
+      const version = String(logo.updatedAt.getTime());
+      expect((await loadInvoiceDocument(tx, manager, issued))?.doc.logoVersion).toBe(version);
+      expect((await loadInvoiceDocument(tx, manager, draft))?.doc.logoVersion).toBe(version);
+      expect(
+        (await loadStatementDocument(tx, manager, c.customerId, period))?.doc.logoVersion,
+      ).toBe(version);
     });
   });
 

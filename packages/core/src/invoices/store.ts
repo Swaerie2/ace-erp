@@ -21,6 +21,7 @@ export type InvoiceStore = Pick<
   | "quoteLine"
   | "quoteWording"
   | "organisationSettings"
+  | "companyLogo"
   | "auditLog"
   | "staffUser"
   | "$queryRaw"

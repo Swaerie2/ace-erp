@@ -1,10 +1,13 @@
 import type { InvoiceDocument, StatementDocument } from "@ace/core";
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { LogoImage, type PdfLogo } from "./pdf-logo";
 
 // Hook-free on purpose: the staff app calls InvoicePdf and StatementPdf as plain functions (outside a React
 // render), so each must return the <Document> element as its root. Built-in Helvetica only (no font files).
 // Long tables flow across pages: every row stays whole (wrap={false}) and the section headings keep some
 // content with them (minPresenceAhead), so a table can run to any length.
+// The logo bytes come in their own `logo` prop, never inside the document object, so the picture never
+// travels through React server component props or JSON. Without a logo the layout is exactly as before.
 
 const GREEN = "#1f4d36";
 const OCHRE = "#b5832a";
@@ -74,6 +77,7 @@ function From({ business }: { business: Business }) {
       <Text style={s.label}>FROM</Text>
       <Text style={s.strong}>{business.legalName}</Text>
       <Text>t/a {business.tradingName}</Text>
+      {business.address ? <Text>{business.address}</Text> : null}
       {business.registrationNumber ? <Text>Reg {business.registrationNumber}</Text> : null}
       {business.phone ? <Text>{business.phone}</Text> : null}
       {business.email ? <Text>{business.email}</Text> : null}
@@ -112,13 +116,14 @@ function Footer({ left, right }: { left: string; right: string }) {
   );
 }
 
-export function InvoicePdf({ doc }: { doc: InvoiceDocument }) {
+export function InvoicePdf({ doc, logo }: { doc: InvoiceDocument; logo?: PdfLogo | null }) {
   return (
     <Document
       title={`${doc.reference} ${doc.business.tradingName}`}
       author={doc.business.tradingName}
     >
       <Page size="A4" style={s.page}>
+        <LogoImage logo={logo} />
         <Text style={s.brand}>{doc.business.tradingName.toUpperCase()}</Text>
         <Text style={s.title}>{doc.title}</Text>
         {doc.banner ? <Text style={s.banner}>{doc.banner}</Text> : null}
@@ -187,10 +192,11 @@ export function InvoicePdf({ doc }: { doc: InvoiceDocument }) {
   );
 }
 
-export function StatementPdf({ doc }: { doc: StatementDocument }) {
+export function StatementPdf({ doc, logo }: { doc: StatementDocument; logo?: PdfLogo | null }) {
   return (
     <Document title={`Statement ${doc.customer.number}`} author={doc.business.tradingName}>
       <Page size="A4" style={s.page}>
+        <LogoImage logo={logo} />
         <Text style={s.brand}>{doc.business.tradingName.toUpperCase()}</Text>
         <Text style={s.title}>Statement</Text>
         <Text>

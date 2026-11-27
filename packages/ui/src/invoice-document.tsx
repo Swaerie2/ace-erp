@@ -1,6 +1,15 @@
 import type { InvoiceDocument, StatementDocument } from "@ace/core";
 
-// Rendered inside server components: no hooks, no event handlers.
+// Rendered inside server components: no hooks, no event handlers. `logoSrc` is the logo URL the app builds
+// (for example `/company-logo?v=<version>`); without it the header is exactly as before.
+
+/** The company logo at the top of a document, height-capped. Nothing when there is no logo. */
+export function DocumentLogo({ src, alt }: { src?: string | null; alt: string }) {
+  if (!src) return null;
+  // A plain <img>: the logo comes from the app's own logo route, not from an image optimiser.
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt={alt} className="mb-3 block h-auto max-h-14 w-auto max-w-[10rem]" />;
+}
 
 function BankBlock({
   bank,
@@ -51,6 +60,7 @@ function Business({ business }: { business: InvoiceDocument["business"] }) {
     <dd className="break-words">
       <span className="font-semibold">{business.legalName}</span>
       <span className="block">t/a {business.tradingName}</span>
+      {business.address ? <span className="block">{business.address}</span> : null}
       {business.registrationNumber ? (
         <span className="block">Reg {business.registrationNumber}</span>
       ) : null}
@@ -60,10 +70,17 @@ function Business({ business }: { business: InvoiceDocument["business"] }) {
   );
 }
 
-export function InvoiceDocumentView({ doc }: { doc: InvoiceDocument }) {
+export function InvoiceDocumentView({
+  doc,
+  logoSrc,
+}: {
+  doc: InvoiceDocument;
+  logoSrc?: string | null;
+}) {
   return (
     <article className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-charcoal/10 sm:p-8">
       <header>
+        <DocumentLogo src={logoSrc} alt={doc.business.tradingName} />
         <p className="font-display text-sm font-semibold uppercase tracking-wide text-ochre">
           {doc.business.tradingName}
         </p>
@@ -149,10 +166,17 @@ export function InvoiceDocumentView({ doc }: { doc: InvoiceDocument }) {
   );
 }
 
-export function StatementDocumentView({ doc }: { doc: StatementDocument }) {
+export function StatementDocumentView({
+  doc,
+  logoSrc,
+}: {
+  doc: StatementDocument;
+  logoSrc?: string | null;
+}) {
   return (
     <article className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-charcoal/10 sm:p-8">
       <header>
+        <DocumentLogo src={logoSrc} alt={doc.business.tradingName} />
         <p className="font-display text-sm font-semibold uppercase tracking-wide text-ochre">
           {doc.business.tradingName}
         </p>

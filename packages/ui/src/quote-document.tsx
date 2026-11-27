@@ -1,4 +1,5 @@
 import type { QuoteDocument } from "@ace/core";
+import { DocumentLogo } from "./invoice-document";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -17,12 +18,20 @@ const BANNERS: Partial<Record<QuoteDocument["status"], string>> = {
   DECLINED: "This quote was declined.",
 };
 
-export function QuoteDocumentView({ doc }: { doc: QuoteDocument }) {
+/** `logoSrc` is the logo URL the app builds (see invoice-document.tsx); optional. */
+export function QuoteDocumentView({
+  doc,
+  logoSrc,
+}: {
+  doc: QuoteDocument;
+  logoSrc?: string | null;
+}) {
   const banner = BANNERS[doc.status];
   const includedRows = doc.pricing.rows;
   return (
     <article className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-charcoal/10 sm:p-8">
       <header>
+        <DocumentLogo src={logoSrc} alt={doc.business.tradingName} />
         <p className="font-display text-sm font-semibold uppercase tracking-wide text-ochre">
           {doc.business.tradingName}
         </p>
@@ -65,6 +74,7 @@ export function QuoteDocumentView({ doc }: { doc: QuoteDocument }) {
           <dd className="break-words">
             <span className="font-semibold">{doc.business.legalName}</span>
             <span className="block">t/a {doc.business.tradingName}</span>
+            {doc.business.address ? <span className="block">{doc.business.address}</span> : null}
             {doc.business.registrationNumber ? (
               <span className="block">Reg {doc.business.registrationNumber}</span>
             ) : null}

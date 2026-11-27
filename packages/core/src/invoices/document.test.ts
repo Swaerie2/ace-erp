@@ -108,6 +108,18 @@ describe("buildInvoiceDocument", () => {
   it("contains no em dash anywhere", () => {
     expect(JSON.stringify(buildInvoiceDocument(base))).not.toContain("\u2014");
   });
+  it("shows the frozen company address (null when there is none) and the logo version", () => {
+    const plain = buildInvoiceDocument(base);
+    expect(plain.business.address).toBeNull();
+    expect(plain.logoVersion).toBeNull();
+    const doc = buildInvoiceDocument({
+      ...base,
+      snapshot: { ...snapshot, business: { ...snapshot.business, address: "1 ZZ Road, Testcity" } },
+      logoVersion: "1764240000000",
+    });
+    expect(doc.business.address).toBe("1 ZZ Road, Testcity");
+    expect(doc.logoVersion).toBe("1764240000000");
+  });
 });
 
 const statementData = {
@@ -230,5 +242,16 @@ describe("buildStatementDocument", () => {
   });
   it("contains no em dash anywhere", () => {
     expect(JSON.stringify(build())).not.toContain("\u2014");
+  });
+  it("shows the company address and the logo version", () => {
+    expect(build()).toMatchObject({ business: { address: null }, logoVersion: null });
+    const doc = buildStatementDocument({
+      generatedOn: "2026-11-27",
+      customer: { name: "ZZ E2E Agency", number: 123, address: null },
+      snapshot: { ...snapshot, business: { ...snapshot.business, address: "1 ZZ Road" } },
+      data: statementData,
+      logoVersion: "42",
+    });
+    expect(doc).toMatchObject({ business: { address: "1 ZZ Road" }, logoVersion: "42" });
   });
 });

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { assertRole, DomainError, MANAGEMENT, type Actor } from "../customers/access";
 import { formatCustomerNumber } from "../customers/number";
+import { readCompanyLogoVersion } from "../company/profile";
 import { formatZAR } from "../money";
 import { addDays, formatDateSA, fromDateString, toDateString, todaySA } from "../quotes/reference";
 import { formatMonthLabel } from "./dates";
@@ -37,7 +38,19 @@ export type InvoiceDocumentInput = {
   lines: { id: string; kind: InvoiceLineKindValue; description: string; amountCents: number }[];
   paidCents: number;
   snapshot: InvoiceSnapshot;
+  /** The logo's cache buster (see readCompanyLogoVersion); null or left out when there is no logo. */
+  logoVersion?: string | null;
 };
+
+/** ACE's details on a document. `address` is null when none was entered (or frozen). */
+export type DocumentBusiness = Omit<InvoiceSnapshot["business"], "address"> & {
+  address: string | null;
+};
+
+const businessOf = (snapshot: InvoiceSnapshot): DocumentBusiness => ({
+  ...snapshot.business,
+  address: snapshot.business.address ?? null,
+});
 
 export type InvoiceDocument = {
   reference: string;
@@ -50,7 +63,9 @@ export type InvoiceDocument = {
   serviceMonthLabel: string | null;
   billTo: { name: string; address: string | null };
   forCustomerName: string | null;
-  business: InvoiceSnapshot["business"];
+  business: DocumentBusiness;
+  /** The logo's cache buster: the apps build the logo URL from it. Null when there is no logo. */
+  logoVersion: string | null;
   rows: { id: string; description: string; kindLabel: string; amountLabel: string }[];
   totalLabel: string;
   paidLabel: string | null;
@@ -83,7 +98,8 @@ export function buildInvoiceDocument(input: InvoiceDocumentInput): InvoiceDocume
     serviceMonthLabel: input.serviceMonth ? formatMonthLabel(input.serviceMonth) : null,
     billTo: input.billTo,
     forCustomerName: input.forCustomerName,
-    business: input.snapshot.business,
+    business: businessOf(input.snapshot),
+    logoVersion: input.logoVersion ?? null,
     rows: input.lines.map((l) => ({
       id: l.id,
       description: l.description,
@@ -195,6 +211,7 @@ export async function loadInvoiceDocument(
     lines: inv.lines,
     paidCents,
     snapshot,
+    logoVersion: await readCompanyLogoVersion(store),
   });
   return { doc };
 }
@@ -203,7 +220,9 @@ export type StatementDocument = {
   periodLabel: string;
   generatedDate: string;
   customer: { name: string; number: string; address: string | null };
-  business: InvoiceSnapshot["business"];
+  business: DocumentBusiness;
+  /** The logo's cache buster: the apps build the logo URL from it. Null when there is no logo. */
+  logoVersion: string | null;
   bank: InvoiceSnapshot["bank"];
   bankReady: boolean;
   paymentReference: string;
@@ -247,6 +266,7 @@ export function buildStatementDocument(input: {
   customer: { name: string; number: number; address: string | null };
   snapshot: InvoiceSnapshot;
   generatedOn: string;
+  logoVersion?: string | null;
 }): StatementDocument {
   const d = input.data;
   return {
@@ -257,7 +277,8 @@ export function buildStatementDocument(input: {
       number: formatCustomerNumber(input.customer.number),
       address: input.customer.address,
     },
-    business: input.snapshot.business,
+    business: businessOf(input.snapshot),
+    logoVersion: input.logoVersion ?? null,
     bank: input.snapshot.bank,
     bankReady: bankDetailsReady(input.snapshot.bank),
     paymentReference: input.snapshot.paymentReference,
@@ -322,6 +343,7 @@ export async function loadStatementDocument(
       },
       snapshot,
       generatedOn: todaySA(),
+      logoVersion: await readCompanyLogoVersion(store),
     }),
   };
 }
