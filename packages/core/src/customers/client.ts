@@ -28,3 +28,5 @@ export { addDays, todaySA } from "../quotes/reference";
 export { formatZAR } from "../money";
 export { buildQuoteDocument } from "../quotes/document";
 export { bulletLines, snapshotWording } from "../quotes/wording-schema";
+export { INVOICE_LINE_KIND_LABELS, NEW_LINE_KINDS } from "../invoices/labels";
+export { MAX_INVOICE_LINES, parseSignedRandToCents, suggestAllocations } from "../invoices/money";
