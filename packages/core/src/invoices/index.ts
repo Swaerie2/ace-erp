@@ -53,3 +53,12 @@ export {
 } from "./payments";
 export { dismissPaymentReport, getPaymentReport, listPaymentReports } from "./reports";
 export { getStatement } from "./statements";
+export {
+  buildInvoiceDocument,
+  buildStatementDocument,
+  loadInvoiceDocument,
+  loadStatementDocument,
+  type InvoiceDocument,
+  type InvoiceDocumentInput,
+  type StatementDocument,
+} from "./document";

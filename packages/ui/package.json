@@ -6,10 +6,13 @@
   "exports": {
     "./quote-document": "./src/quote-document.tsx",
     "./quote-pdf": "./src/quote-pdf.tsx",
+    "./invoice-document": "./src/invoice-document.tsx",
+    "./invoice-pdf": "./src/invoice-pdf.tsx",
     "./use-focus-on-feedback": "./src/use-focus-on-feedback.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@ace/core": "*",
@@ -17,6 +20,7 @@
     "react": "^19.3.1"
   },
   "devDependencies": {
-    "@types/react": "^19.3.0"
+    "@types/react": "^19.3.0",
+    "vitest": "^5.1.1"
   }
 }
