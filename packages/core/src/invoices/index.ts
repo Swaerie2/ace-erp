@@ -52,3 +52,4 @@ export {
   type PaymentView,
 } from "./payments";
 export { dismissPaymentReport, getPaymentReport, listPaymentReports } from "./reports";
+export { getStatement } from "./statements";
