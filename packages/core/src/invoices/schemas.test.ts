@@ -7,6 +7,7 @@ import {
   invoiceDraftSchema,
   invoiceSettingsFormSchema,
   paymentInputFromForm,
+  reasonSchema,
 } from "./schemas";
 
 const ID1 = "11111111-1111-4111-8111-111111111111";
@@ -118,6 +119,34 @@ describe("draftInputFromForm", () => {
       draftInputFromForm({ version: "1", "line-0-id": "not-an-id", "line-0-kind": "SERVICE" }),
     ).toEqual({ ok: false, fieldErrors: { form: "Refresh the page and try again." } });
   });
+
+  it("refuses a 41st line instead of dropping it, unless it is removed or empty", () => {
+    const tooMany = { ok: false, fieldErrors: { form: "Keep the invoice to 40 lines or fewer." } };
+    const extra = { "line-40-kind": "SERVICE", "line-40-description": "x", "line-40-amount": "1" };
+    expect(draftInputFromForm({ version: "1", ...extra })).toEqual(tooMany);
+    expect(draftInputFromForm({ version: "1", "line-99-amount": "5" })).toEqual(tooMany);
+    expect(draftInputFromForm({ version: "1", ...extra, "line-40-remove": "on" })).toEqual({
+      ok: true,
+      input: { version: 1, dueDate: null, lines: [] },
+    });
+    expect(
+      draftInputFromForm({ version: "1", "line-40-kind": "SERVICE", "line-40-description": " " }),
+    ).toEqual({ ok: true, input: { version: 1, dueDate: null, lines: [] } });
+  });
+
+  it("refuses control characters in a description", () => {
+    expect(
+      draftInputFromForm({
+        version: "1",
+        "line-0-kind": "SERVICE",
+        "line-0-description": "Garden\u0000",
+        "line-0-amount": "10",
+      }),
+    ).toEqual({
+      ok: false,
+      fieldErrors: { "line-0-description": "Remove the special characters." },
+    });
+  });
 });
 
 describe("invoiceDraftSchema", () => {
@@ -140,6 +169,36 @@ describe("invoiceDraftSchema", () => {
     ]) {
       expect(invoiceDraftSchema.safeParse(bad).success).toBe(false);
     }
+  });
+  it("explains each problem in plain words", () => {
+    const messages = (input: unknown) =>
+      (invoiceDraftSchema.safeParse(input).error?.issues ?? []).map((i) => i.message);
+    expect(messages(line(0))).toEqual([
+      "Enter an amount that is not zero, up to R1 000 000 either way.",
+    ]);
+    expect(messages(line(1.5))).toEqual(["Enter the amount in whole cents."]);
+    const withDescription = (description: string) => ({
+      version: 1,
+      dueDate: null,
+      lines: [{ id: null, kind: "SERVICE", description, amountCents: 100 }],
+    });
+    expect(messages(withDescription("  "))).toEqual(["Enter a description."]);
+    expect(messages(withDescription("x".repeat(301)))).toEqual(["Keep this under 300 characters."]);
+    expect(messages(withDescription("Garden\u0000"))).toEqual(["Remove the special characters."]);
+  });
+  it("refuses the same line id twice (in any letter case)", () => {
+    const row = (id: string) => ({ id, kind: "SERVICE", description: "Garden", amountCents: 100 });
+    const result = invoiceDraftSchema.safeParse({
+      version: 1,
+      dueDate: null,
+      lines: [row(ID1), row(ID2), row(ID1.toUpperCase())],
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((i) => i.path)).toEqual([["lines", 2, "id"]]);
+    expect(
+      invoiceDraftSchema.safeParse({ version: 1, dueDate: null, lines: [row(ID1), row(ID2)] })
+        .success,
+    ).toBe(true);
   });
 });
 
@@ -208,14 +267,17 @@ describe("paymentInputFromForm", () => {
     const base = { payerCustomerId: ID1, receivedOn: today, reference: "", note: "" };
     expect(paymentInputFromForm({ ...base, amount: "1000000.01" }, today)).toEqual({
       ok: false,
-      fieldErrors: { amount: "Enter the amount received, for example 1150.00." },
+      fieldErrors: { amount: "Keep the payment to R1 000 000 or less." },
     });
     expect(
       paymentInputFromForm({ ...base, amount: "1000000", [`alloc-${ID2}`]: "1000000.01" }, today),
     ).toEqual({
       ok: false,
-      fieldErrors: { [`alloc-${ID2}`]: "Enter an amount or leave the box empty." },
+      fieldErrors: { [`alloc-${ID2}`]: "Keep the amount to R1 000 000 or less." },
     });
+    expect(paymentInputFromForm({ ...base, amount: "10", [`alloc-${ID2}`]: "abc" }, today)).toEqual(
+      { ok: false, fieldErrors: { [`alloc-${ID2}`]: "Enter an amount or leave the box empty." } },
+    );
     expect(
       paymentInputFromForm({ ...base, receivedOn: "2019-12-31", amount: "10" }, today),
     ).toEqual({
@@ -224,6 +286,32 @@ describe("paymentInputFromForm", () => {
     });
     const atLimit = paymentInputFromForm({ ...base, amount: "1000000" }, today);
     expect(atLimit.ok && atLimit.input.amountCents).toBe(100_000_000);
+  });
+
+  it("refuses control characters in the reference and note, but keeps line breaks in a note", () => {
+    const base = { payerCustomerId: ID1, receivedOn: today, amount: "10" };
+    expect(
+      paymentInputFromForm({ ...base, reference: "C-01\u000023", note: "ok\u0007" }, today),
+    ).toEqual({
+      ok: false,
+      fieldErrors: {
+        reference: "Remove the special characters.",
+        note: "Remove the special characters.",
+      },
+    });
+    expect(paymentInputFromForm({ ...base, reference: "a\tb" }, today)).toEqual({
+      ok: false,
+      fieldErrors: { reference: "Remove the special characters." },
+    });
+    expect(paymentInputFromForm({ ...base, note: "x\u007f" }, today)).toEqual({
+      ok: false,
+      fieldErrors: { note: "Remove the special characters." },
+    });
+    const withBreaks = paymentInputFromForm(
+      { ...base, note: "Line one\r\nLine two\nthree" },
+      today,
+    );
+    expect(withBreaks.ok && withBreaks.input.note).toBe("Line one\r\nLine two\nthree");
   });
 
   it("refuses a damaged form", () => {
@@ -253,6 +341,27 @@ describe("allocationFormSchema", () => {
     expect(
       allocationFormSchema.safeParse({ paymentId: "x", invoiceId: ID2, amount: "1" }).success,
     ).toBe(false);
+  });
+  it("says the limit when the amount is too big", () => {
+    const result = allocationFormSchema.safeParse({
+      paymentId: ID1,
+      invoiceId: ID2,
+      amount: "1000000.01",
+    });
+    expect(result.error?.issues.map((i) => i.message)).toEqual([
+      "Keep the amount to R1 000 000 or less.",
+    ]);
+  });
+});
+
+describe("reasonSchema", () => {
+  it("trims, and refuses empty, too long and control characters", () => {
+    expect(reasonSchema.parse("  Sent twice ")).toBe("Sent twice");
+    expect(reasonSchema.safeParse("   ").success).toBe(false);
+    expect(reasonSchema.safeParse("x".repeat(301)).success).toBe(false);
+    expect(reasonSchema.safeParse("x".repeat(300)).success).toBe(true);
+    const bad = reasonSchema.safeParse("bad\u0000reason");
+    expect(bad.error?.issues.map((i) => i.message)).toEqual(["Remove the special characters."]);
   });
 });
 
@@ -290,6 +399,23 @@ describe("invoice settings", () => {
     expect(result.success).toBe(false);
     const paths = (result.error?.issues ?? []).map((i) => String(i.path[0])).sort();
     expect(paths).toEqual(["accountNumber", "branchCode", "lateFee", "onceOffDueDays"]);
+  });
+  it("refuses control characters in the text boxes", () => {
+    const result = invoiceSettingsFormSchema.safeParse({
+      bankName: "ZZ\u0000 Bank",
+      accountHolder: "ACE\u001b",
+      accountNumber: "1234567890",
+      branchCode: "250655",
+      accountType: "Cheque\u007f",
+      onceOffDueDays: "14",
+      lateFee: "100",
+    });
+    const issues = (result.error?.issues ?? []).map((i) => [String(i.path[0]), i.message]);
+    expect(issues.sort()).toEqual([
+      ["accountHolder", "Remove the special characters."],
+      ["accountType", "Remove the special characters."],
+      ["bankName", "Remove the special characters."],
+    ]);
   });
   it("knows when the bank details are complete", () => {
     const full = {

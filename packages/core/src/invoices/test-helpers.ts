@@ -269,7 +269,11 @@ export function sameTx(tx: Tx): TxRunner {
   return <T>(fn: (t: Prisma.TransactionClient) => Promise<T>) => fn(tx);
 }
 
-/** The audit lines written about one record, oldest first. */
+/**
+ * The audit lines written about one record, sorted by `at`. Rows written in one transaction can share the same
+ * `at`, so the order among them is not reliable: callers must not depend on it (filter, count or use
+ * `toContainEqual` instead).
+ */
 export function auditFor(tx: Tx, entityType: string, entityId: string) {
   return tx.auditLog.findMany({
     where: { entityType, entityId },

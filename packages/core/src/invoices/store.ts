@@ -115,14 +115,20 @@ export function logPaymentEvent(
   return logEvent(store, actor, "payment", action, paymentId, after);
 }
 
-const sortedUnique = (ids: readonly string[]) => [...new Set(ids)].sort();
+/**
+ * Lock order everywhere: customers (smaller id first), then invoices (smaller id first), then payments, then
+ * payment reports. Ids are lowercased first, so an uppercase UUID neither escapes de-duplication nor sorts
+ * differently from the same id in lowercase.
+ */
+export const sortedUniqueIds = (ids: readonly string[]): string[] =>
+  [...new Set(ids.map((id) => id.toLowerCase()))].sort();
 
 /** Locks several customers, smaller id first (the lock order used everywhere). */
 export async function lockCustomersInOrder(
   store: Pick<Db, "customer">,
   ids: readonly string[],
 ): Promise<void> {
-  for (const id of sortedUnique(ids)) await lockCustomer(store, id);
+  for (const id of sortedUniqueIds(ids)) await lockCustomer(store, id);
 }
 
 /** Locks invoice rows until the transaction ends, smaller id first. */
@@ -130,21 +136,24 @@ export async function lockInvoiceRows(
   store: Pick<Db, "$queryRaw">,
   ids: readonly string[],
 ): Promise<void> {
-  for (const id of sortedUnique(ids)) {
+  for (const id of sortedUniqueIds(ids)) {
     const rows = await store.$queryRaw<{ id: string }[]>`
       select "id" from "invoices" where "id" = ${id}::uuid for update`;
     if (rows.length !== 1) throw new DomainError(INVOICE_MESSAGES.notFound);
   }
 }
 
-/** Locks one payment row until the transaction ends. */
+/** Locks one payment row until the transaction ends. Payments come after customers and invoices in the lock order. */
 export async function lockPaymentRow(store: Pick<Db, "$queryRaw">, id: string): Promise<void> {
   const rows = await store.$queryRaw<{ id: string }[]>`
     select "id" from "payments" where "id" = ${id}::uuid for update`;
   if (rows.length !== 1) throw new DomainError(INVOICE_MESSAGES.paymentNotFound);
 }
 
-/** Locks one payment report row until the transaction ends. */
+/**
+ * Locks one payment report row until the transaction ends. Reports come LAST in the lock order: after the
+ * customers, the invoices and the payment (so confirming a report while recording its payment cannot deadlock).
+ */
 export async function lockReportRow(store: Pick<Db, "$queryRaw">, id: string): Promise<void> {
   const rows = await store.$queryRaw<{ id: string }[]>`
     select "id" from "payment_reports" where "id" = ${id}::uuid for update`;
@@ -190,12 +199,56 @@ export function billToIdFor(c: {
   return c.managedById && c.billsToManager ? c.managedById : c.id;
 }
 
-/** True when the database refused a second live monthly invoice for the same customer and month. */
+const MONTHLY_INDEX = "invoices_monthly_once_per_month";
+
+type DbErrorShape = {
+  code?: unknown;
+  message?: unknown;
+  /** Set on a raw node-postgres error. */
+  constraint?: unknown;
+  meta?: {
+    target?: unknown;
+    driverAdapterError?: {
+      cause?: {
+        originalCode?: unknown;
+        originalMessage?: unknown;
+        constraint?: { index?: unknown; fields?: unknown };
+      };
+    };
+  };
+};
+
+const mentions = (value: unknown, word: string): boolean =>
+  Array.isArray(value)
+    ? value.some((v) => mentions(v, word))
+    : typeof value === "string" && value.includes(word);
+
+/**
+ * True only when the database refused a second live monthly invoice for the same customer and month (the
+ * partial unique index `invoices_monthly_once_per_month`). Any other unique error (an invoice number, an
+ * allocation pair) gives false. Use it only around creating a MONTHLY DRAFT, and put the catch OUTSIDE the
+ * interactive transaction: after a unique violation (23505) Postgres has aborted that transaction, so the only
+ * safe reaction is to let it roll back and then report the customer as skipped.
+ */
 export function isMonthlyDuplicate(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
-  const { code, message } = error as { code?: unknown; message?: unknown };
-  return (
-    code === "P2002" ||
-    (typeof message === "string" && message.includes("invoices_monthly_once_per_month"))
-  );
+  const e = error as DbErrorShape;
+  const meta = typeof e.meta === "object" && e.meta !== null ? e.meta : {};
+  const cause = meta.driverAdapterError?.cause;
+  const namesIndex = [
+    e.message,
+    e.constraint,
+    cause?.originalMessage,
+    cause?.constraint?.index,
+  ].some((v) => mentions(v, MONTHLY_INDEX));
+  if (e.code === "P2002") {
+    const target = meta.target;
+    const targetIsMonth = Array.isArray(target)
+      ? target.includes("serviceMonth")
+      : target === "serviceMonth";
+    return namesIndex || mentions(target, MONTHLY_INDEX) || targetIsMonth;
+  }
+  // Raw Postgres errors (node-postgres code 23505, or Prisma's raw-query P2010 wrapping one).
+  const raw = e.code === "23505" || cause?.originalCode === "23505";
+  return raw && namesIndex;
 }

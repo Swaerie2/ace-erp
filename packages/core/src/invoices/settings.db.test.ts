@@ -44,7 +44,9 @@ describe.skipIf(!dbTestsEnabled)("invoice settings", () => {
   it("records the changed field names only, and an unchanged save writes nothing", async () => {
     await withRollback(async (tx) => {
       await updateInvoiceSettings(tx, owner, INPUT);
+      const savedAt = (await readInvoiceSettings(tx)).updatedAt;
       await updateInvoiceSettings(tx, owner, INPUT);
+      expect((await readInvoiceSettings(tx)).updatedAt).toEqual(savedAt);
       await updateInvoiceSettings(tx, owner, { ...INPUT, lateFeeCents: 20000 });
       const lines = (await auditFor(tx, "invoice_settings", "singleton")).filter(
         (l) => l.actorId === owner.id,
@@ -59,6 +61,32 @@ describe.skipIf(!dbTestsEnabled)("invoice settings", () => {
       expect(text).not.toContain("9876543210");
       expect(text).not.toContain("ZZ Test Bank");
       expect(text).not.toContain("ACE Garden Services");
+    });
+  });
+});
+
+describe.skipIf(!dbTestsEnabled)("invoice settings lock", () => {
+  it("a save locks the settings row first, even when it changes nothing", async () => {
+    await withRollback(async (first) => {
+      const s = await readInvoiceSettings(first);
+      // Nothing changes, so this writes nothing, but it still holds the row lock until `first` ends.
+      await updateInvoiceSettings(first, owner, {
+        bankName: s.bankName,
+        accountHolder: s.accountHolder,
+        accountNumber: s.accountNumber,
+        branchCode: s.branchCode,
+        accountType: s.accountType,
+        onceOffDueDays: s.onceOffDueDays,
+        lateFeeCents: s.lateFeeCents,
+      });
+      expect(await auditFor(first, "invoice_settings", "singleton")).not.toContainEqual(
+        expect.objectContaining({ actorId: owner.id }),
+      );
+      const second = withRollback(async (tx) => {
+        await tx.$executeRaw`set local lock_timeout = '1000ms'`;
+        await updateInvoiceSettings(tx, owner, INPUT);
+      });
+      await expect(second).rejects.toThrow(/lock timeout/i);
     });
   });
 });

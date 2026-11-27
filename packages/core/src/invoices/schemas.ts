@@ -17,20 +17,30 @@ const DAMAGED = { ok: false as const, fieldErrors: { form: "Refresh the page and
 const isUuid = (v: string) => z.uuid().safeParse(v).success;
 const tooLong = (max: number) => `Keep this under ${max} characters.`;
 
+/** Control characters (a NUL byte makes Postgres refuse the write). Single-line text allows none. */
+const CONTROL_ANY = /[\u0000-\u001f\u007f]/;
+/** Notes keep line breaks (browsers post them as CR LF) but no other control characters. */
+const CONTROL_EXCEPT_NEWLINE = /[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f]/;
+export const SPECIAL_CHARACTERS = "Remove the special characters.";
+const plainText = (v: string) => !CONTROL_ANY.test(v);
+const LIMIT_WORDS = "R1 000 000";
+const TOO_MANY_LINES = `Keep the invoice to ${MAX_INVOICE_LINES} lines or fewer.`;
+
 export const billingTimingSchema = z.enum(BILLING_TIMINGS);
 export const runMonthSchema = z.string().refine(isMonthString, "Choose a month.");
 export const reasonSchema = z
   .string()
   .trim()
   .min(1, "Say why in a few words.")
-  .max(300, "Keep the reason to 300 characters or fewer.");
+  .max(300, "Keep the reason to 300 characters or fewer.")
+  .refine(plainText, SPECIAL_CHARACTERS);
 
 // --- settings ---------------------------------------------------------------------------------
 
 export const invoiceSettingsFormSchema = z
   .object({
-    bankName: z.string().trim().max(80, tooLong(80)),
-    accountHolder: z.string().trim().max(120, tooLong(120)),
+    bankName: z.string().trim().max(80, tooLong(80)).refine(plainText, SPECIAL_CHARACTERS),
+    accountHolder: z.string().trim().max(120, tooLong(120)).refine(plainText, SPECIAL_CHARACTERS),
     accountNumber: z
       .string()
       .transform((v) => v.replace(/[\s-]/g, ""))
@@ -42,7 +52,7 @@ export const invoiceSettingsFormSchema = z
       .string()
       .trim()
       .refine((v) => v === "" || /^\d{6}$/.test(v), "Enter the 6-digit branch code."),
-    accountType: z.string().trim().max(40, tooLong(40)),
+    accountType: z.string().trim().max(40, tooLong(40)).refine(plainText, SPECIAL_CHARACTERS),
     onceOffDueDays: z
       .string()
       .trim()
@@ -106,19 +116,42 @@ export const invoiceDraftSchema = z.object({
       z
         .object({
           id: z.uuid().nullable(),
-          kind: z.enum(INVOICE_LINE_KINDS),
-          description: z.string().trim().min(1).max(MAX_DESCRIPTION),
+          kind: z.enum(INVOICE_LINE_KINDS, "Choose what kind of line this is."),
+          description: z
+            .string()
+            .trim()
+            .min(1, "Enter a description.")
+            .max(MAX_DESCRIPTION, tooLong(MAX_DESCRIPTION))
+            .refine(plainText, SPECIAL_CHARACTERS),
           amountCents: z
             .number()
-            .int()
-            .refine((v) => v !== 0 && Math.abs(v) <= MAX_LINE_CENTS),
+            .int("Enter the amount in whole cents.")
+            .refine(
+              (v) => v !== 0 && Math.abs(v) <= MAX_LINE_CENTS,
+              `Enter an amount that is not zero, up to ${LIMIT_WORDS} either way.`,
+            ),
         })
-        .refine((l) => l.amountCents > 0 || l.kind === "ADJUSTMENT", {
+        .refine((l) => l.amountCents >= 0 || l.kind === "ADJUSTMENT", {
           message: "Only an adjustment can be negative.",
           path: ["amountCents"],
         }),
     )
-    .max(MAX_INVOICE_LINES),
+    .max(MAX_INVOICE_LINES, TOO_MANY_LINES)
+    .superRefine((lines, ctx) => {
+      const seen = new Set<string>();
+      lines.forEach((l, index) => {
+        if (l.id === null) return;
+        const key = l.id.toLowerCase();
+        if (seen.has(key)) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Each line can appear only once. Refresh the page and try again.",
+            path: [index, "id"],
+          });
+        }
+        seen.add(key);
+      });
+    }),
 });
 export type InvoiceDraftInput = z.output<typeof invoiceDraftSchema>;
 
@@ -134,6 +167,19 @@ export function draftInputFromForm(values: Record<string, string>): FormParse<In
   const fieldErrors: Record<string, string> = {};
   const dueText = (values.dueDate ?? "").trim();
   if (dueText !== "" && !isValidDateString(dueText)) fieldErrors.dueDate = "Choose a valid date.";
+
+  // Rows beyond the limit are never read below, so refuse them instead of dropping them silently.
+  // (A row that is ticked for removal, or completely empty, is not a line.)
+  for (const key of Object.keys(values)) {
+    const match = /^line-(\d+)-/.exec(key);
+    if (!match) continue;
+    const n = Number(match[1]);
+    if (n < MAX_INVOICE_LINES || values[`line-${n}-remove`] === "on") continue;
+    const used = ["id", "description", "amount"].some(
+      (f) => (values[`line-${n}-${f}`] ?? "").trim() !== "",
+    );
+    if (used) return { ok: false, fieldErrors: { form: TOO_MANY_LINES } };
+  }
 
   const lines: InvoiceDraftInput["lines"] = [];
   for (let i = 0; i < MAX_INVOICE_LINES; i += 1) {
@@ -152,11 +198,12 @@ export function draftInputFromForm(values: Record<string, string>): FormParse<In
     if (description === "") fieldErrors[`${p}description`] = "Enter a description.";
     else if (description.length > MAX_DESCRIPTION)
       fieldErrors[`${p}description`] = tooLong(MAX_DESCRIPTION);
+    else if (!plainText(description)) fieldErrors[`${p}description`] = SPECIAL_CHARACTERS;
     const cents = parseSignedRandToCents(amountText);
     if (cents === null || cents === 0) {
       fieldErrors[`${p}amount`] = "Enter an amount, for example 1150 or -100.";
     } else if (Math.abs(cents) > MAX_LINE_CENTS) {
-      fieldErrors[`${p}amount`] = "Keep each line to R1 000 000 or less.";
+      fieldErrors[`${p}amount`] = `Keep each line to ${LIMIT_WORDS} or less.`;
     } else if (cents < 0 && kind !== "ADJUSTMENT") {
       fieldErrors[`${p}amount`] = "Only an adjustment can be negative.";
     }
@@ -197,13 +244,17 @@ export function paymentInputFromForm(
     fieldErrors.receivedOn = "Choose the date the money arrived (not in the future).";
   }
   const amountCents = parseRandToCents(values.amount ?? "");
-  if (amountCents === null || amountCents <= 0 || amountCents > MAX_PAYMENT_CENTS) {
+  if (amountCents === null || amountCents <= 0) {
     fieldErrors.amount = "Enter the amount received, for example 1150.00.";
+  } else if (amountCents > MAX_PAYMENT_CENTS) {
+    fieldErrors.amount = `Keep the payment to ${LIMIT_WORDS} or less.`;
   }
   const reference = (values.reference ?? "").trim();
   if (reference.length > MAX_REFERENCE) fieldErrors.reference = tooLong(MAX_REFERENCE);
+  else if (!plainText(reference)) fieldErrors.reference = SPECIAL_CHARACTERS;
   const note = (values.note ?? "").trim();
   if (note.length > MAX_NOTE) fieldErrors.note = tooLong(MAX_NOTE);
+  else if (CONTROL_EXCEPT_NEWLINE.test(note)) fieldErrors.note = SPECIAL_CHARACTERS;
 
   const allocations: PaymentInput["allocations"] = [];
   for (const [key, raw] of Object.entries(values)) {
@@ -213,8 +264,12 @@ export function paymentInputFromForm(
     const text = raw.trim();
     if (text === "") continue;
     const cents = parseRandToCents(text);
-    if (cents === null || cents > MAX_PAYMENT_CENTS) {
+    if (cents === null) {
       fieldErrors[key] = "Enter an amount or leave the box empty.";
+      continue;
+    }
+    if (cents > MAX_PAYMENT_CENTS) {
+      fieldErrors[key] = `Keep the amount to ${LIMIT_WORDS} or less.`;
       continue;
     }
     if (cents > 0) allocations.push({ invoiceId, amountCents: cents });
@@ -248,8 +303,12 @@ export const allocationFormSchema = z
     invoiceId: z.uuid(),
     amount: z.string().transform((v, ctx) => {
       const cents = parseRandToCents(v);
-      if (cents === null || cents <= 0 || cents > MAX_PAYMENT_CENTS) {
+      if (cents === null || cents <= 0) {
         ctx.addIssue({ code: "custom", message: "Enter an amount above zero." });
+        return z.NEVER;
+      }
+      if (cents > MAX_PAYMENT_CENTS) {
+        ctx.addIssue({ code: "custom", message: `Keep the amount to ${LIMIT_WORDS} or less.` });
         return z.NEVER;
       }
       return cents;

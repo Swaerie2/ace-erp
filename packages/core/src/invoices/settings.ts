@@ -65,13 +65,16 @@ export async function invoiceSettingsStatus(
 /**
  * Owner only. Changes apply to invoices issued afterwards; issued invoices keep their frozen copy. A save that
  * changes nothing writes nothing. The audit line names the changed fields only, never the values.
+ * Run it inside a transaction: the settings row is locked first, so two saves at once cannot work out their
+ * changed-field lists from the same stale values.
  */
 export async function updateInvoiceSettings(
-  store: Pick<Db, "invoiceSettings" | "auditLog">,
+  store: Pick<Db, "invoiceSettings" | "auditLog" | "$queryRaw">,
   actor: Actor,
   input: InvoiceSettingsInput,
 ): Promise<void> {
   assertRole(actor, OWNER_ONLY);
+  await store.$queryRaw`select "id" from "invoice_settings" where "id" = 'singleton' for update`;
   const current = await readInvoiceSettings(store);
   const before: Record<string, unknown> = {
     bankName: current.bankName,
