@@ -566,6 +566,9 @@ model InvoiceCounter {
 
 /// Module 5: one invoice. `customerId` is the client the work is for, `billToCustomerId` the payer (the agency
 /// when the complex's bills go to it). Drafts have no number; issuing freezes the recipient, bank details and total.
+/// The partial unique index invoices_monthly_once_per_month ("customerId", "serviceMonth") WHERE kind = 'MONTHLY'
+/// AND status <> 'VOID' exists only in the SQL migration (Prisma cannot express it), as do the CHECK constraints.
+/// Any generated migration diff that tries to DROP that index must have the DROP stripped before it is applied.
 model Invoice {
   id               String             @id @default(uuid()) @db.Uuid
   customerId       String             @db.Uuid

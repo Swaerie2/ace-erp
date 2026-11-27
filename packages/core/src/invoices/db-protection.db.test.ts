@@ -67,7 +67,7 @@ describe.skipIf(!dbTestsEnabled)("invoice database protections", () => {
     await withRollback(async (tx) => {
       const roles = await tx.$queryRaw<{ rolname: string }[]>`
         select rolname from pg_roles where rolname in ('anon', 'authenticated', 'ace_portal')`;
-      expect(roles.length).toBeGreaterThan(0);
+      expect(roles.map((r) => r.rolname).sort()).toEqual(["ace_portal", "anon", "authenticated"]);
       for (const { rolname } of roles) {
         for (const table of TABLES) {
           for (const p of ["select", "insert", "update", "delete"]) {
@@ -100,6 +100,11 @@ describe.skipIf(!dbTestsEnabled)("invoice database protections", () => {
       const row = await tx.invoiceSettings.findUniqueOrThrow({ where: { id: "singleton" } });
       expect(row.onceOffDueDays).toBe(14);
       expect(row.lateFeeCents).toBe(10000);
+      expect(row.bankName).toBe("");
+      expect(row.accountHolder).toBe("");
+      expect(row.accountNumber).toBe("");
+      expect(row.branchCode).toBe("");
+      expect(row.accountType).toBe("");
     });
   });
 
@@ -184,7 +189,9 @@ describe.skipIf(!dbTestsEnabled)("invoice database protections", () => {
         await draft(tx, id, month);
         await draft(tx, id, month);
       }),
-    ).rejects.toThrow(/invoices_monthly_once_per_month|Unique constraint/);
+    ).rejects.toThrow(
+      /invoices_monthly_once_per_month|Unique constraint.*customerId.*serviceMonth/s,
+    );
   });
 
   it("allows a new monthly invoice for the month when the earlier one is void", async () => {
@@ -333,5 +340,130 @@ describe.skipIf(!dbTestsEnabled)("invoice database protections", () => {
     await expect(
       withRollback((tx) => tx.invoiceCounter.create({ data: { year: 2098, lastSeq: 0 } })),
     ).rejects.toThrow(/invoice_counters_seq_positive/);
+  });
+
+  it("rejects two invoices with the same number", async () => {
+    await expect(
+      withRollback(async (tx) => {
+        const id = await customer(tx);
+        const numberSeq = randomInt(1, 2_000_000_000);
+        await issued(tx, id, { numberSeq });
+        await issued(tx, id, { numberSeq });
+      }),
+    ).rejects.toThrow(/invoices_numberYear_numberSeq_key|Unique constraint/);
+  });
+
+  it("rejects an invoice number with a year but no sequence", async () => {
+    await expect(
+      withRollback(async (tx) => {
+        await issued(tx, await customer(tx), { numberSeq: null });
+      }),
+    ).rejects.toThrow(/invoices_number_pair/);
+  });
+
+  it("rejects an invoice number sequence below 1", async () => {
+    await expect(
+      withRollback(async (tx) => {
+        await issued(tx, await customer(tx), { numberSeq: 0 });
+      }),
+    ).rejects.toThrow(/invoices_number_seq_positive/);
+  });
+
+  it("rejects a second allocation row for the same payment and invoice", async () => {
+    await expect(
+      withRollback(async (tx) => {
+        const id = await customer(tx);
+        const inv = await issued(tx, id);
+        const pay = await tx.payment.create({
+          data: {
+            payerCustomerId: id,
+            receivedOn: day("2099-01-01"),
+            amountCents: 100,
+            recordedById: "staff",
+          },
+          select: { id: true },
+        });
+        await tx.paymentAllocation.create({
+          data: { paymentId: pay.id, invoiceId: inv.id, amountCents: 50 },
+        });
+        await tx.paymentAllocation.create({
+          data: { paymentId: pay.id, invoiceId: inv.id, amountCents: 50 },
+        });
+      }),
+    ).rejects.toThrow(/payment_allocations_paymentId_invoiceId_key|Unique constraint/);
+  });
+
+  it("rejects a line that names another invoice but is not a late fee", async () => {
+    await expect(
+      withRollback(async (tx) => {
+        const id = await customer(tx);
+        const overdue = await issued(tx, id);
+        const inv = await draft(tx, id);
+        await tx.invoiceLine.create({
+          data: {
+            invoiceId: inv.id,
+            sortOrder: 1,
+            kind: "SERVICE",
+            description: "x",
+            amountCents: 100,
+            forInvoiceId: overdue.id,
+          },
+        });
+      }),
+    ).rejects.toThrow(/invoice_lines_for_invoice_ok/);
+  });
+
+  it("rejects a late fee charged against its own invoice", async () => {
+    await expect(
+      withRollback(async (tx) => {
+        const inv = await draft(tx, await customer(tx));
+        await tx.invoiceLine.create({
+          data: {
+            invoiceId: inv.id,
+            sortOrder: 1,
+            kind: "LATE_FEE",
+            description: "Late payment fee",
+            amountCents: 10000,
+            forInvoiceId: inv.id,
+          },
+        });
+      }),
+    ).rejects.toThrow(/invoice_lines_for_invoice_ok/);
+  });
+
+  it("allows a late fee charged against another invoice", async () => {
+    await withRollback(async (tx) => {
+      const id = await customer(tx);
+      const overdue = await issued(tx, id);
+      const inv = await draft(tx, id);
+      const line = await tx.invoiceLine.create({
+        data: {
+          invoiceId: inv.id,
+          sortOrder: 1,
+          kind: "LATE_FEE",
+          description: "Late payment fee",
+          amountCents: 10000,
+          forInvoiceId: overdue.id,
+        },
+        select: { forInvoiceId: true },
+      });
+      expect(line.forInvoiceId).toBe(overdue.id);
+    });
+  });
+
+  it("rejects a voided payment that does not say who voided it", async () => {
+    await expect(
+      withRollback(async (tx) => {
+        await tx.payment.create({
+          data: {
+            payerCustomerId: await customer(tx),
+            receivedOn: day("2099-01-01"),
+            amountCents: 100,
+            recordedById: "staff",
+            voidedAt: new Date(),
+          },
+        });
+      }),
+    ).rejects.toThrow(/payments_void_pair/);
   });
 });

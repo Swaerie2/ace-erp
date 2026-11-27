@@ -239,6 +239,8 @@ ALTER TABLE "invoices"
 ALTER TABLE "invoices"
   ADD CONSTRAINT "invoices_number_pair" CHECK (("numberYear" IS NULL) = ("numberSeq" IS NULL));
 ALTER TABLE "invoices"
+  ADD CONSTRAINT "invoices_number_seq_positive" CHECK ("numberSeq" IS NULL OR "numberSeq" >= 1);
+ALTER TABLE "invoices"
   ADD CONSTRAINT "invoices_issued_complete"
   CHECK ("status" = 'DRAFT' OR ("dueDate" IS NOT NULL AND "issuedAt" IS NOT NULL AND "totalCents" IS NOT NULL));
 ALTER TABLE "invoices"
@@ -263,11 +265,17 @@ ALTER TABLE "invoice_lines"
   ADD CONSTRAINT "invoice_lines_negative_only_adjustment" CHECK ("amountCents" > 0 OR "kind" = 'ADJUSTMENT');
 ALTER TABLE "invoice_lines"
   ADD CONSTRAINT "invoice_lines_late_fee_target" CHECK ("kind" <> 'LATE_FEE' OR "forInvoiceId" IS NOT NULL);
+-- Only a late fee line names another invoice, and never its own invoice.
+ALTER TABLE "invoice_lines"
+  ADD CONSTRAINT "invoice_lines_for_invoice_ok"
+  CHECK ("forInvoiceId" IS NULL OR ("kind" = 'LATE_FEE' AND "forInvoiceId" <> "invoiceId"));
 ALTER TABLE "invoice_lines"
   ADD CONSTRAINT "invoice_lines_description_length" CHECK (char_length("description") BETWEEN 1 AND 300);
 
 ALTER TABLE "payments"
   ADD CONSTRAINT "payments_amount_positive" CHECK ("amountCents" > 0);
+ALTER TABLE "payments"
+  ADD CONSTRAINT "payments_void_pair" CHECK (("voidedAt" IS NULL) = ("voidedById" IS NULL));
 ALTER TABLE "payment_allocations"
   ADD CONSTRAINT "payment_allocations_amount_positive" CHECK ("amountCents" > 0);
 ALTER TABLE "payment_reports"
