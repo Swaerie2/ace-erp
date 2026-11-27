@@ -371,7 +371,7 @@ describe.skipIf(!dbTestsEnabled)("the rate limiter", () => {
     });
   });
 
-  it("clears windows older than a day when it cleans up, and never stores the address", async () => {
+  it("clears windows older than two days when it cleans up, and never stores the address", async () => {
     await withRollback(async (tx) => {
       const ip = "198.51.100.77";
       const hashed = hashIp(ip);

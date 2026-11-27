@@ -114,16 +114,19 @@ export async function requestSignInCode(
     now,
     cleanup: false,
   });
-  // Checked before the scope lookup, so LIMITED never depends on whether the email is on file.
-  const byEmailDay = await checkRateLimit(store, "code-email-day", hashEmail(email), {
-    now,
-    cleanup: false,
-  });
   const byVisitor = await checkRateLimit(store, "code-ip", input.ipHash, {
     now,
     cleanup: deps.cleanup,
   });
-  if (!byEmail.allowed || !byEmailDay.allowed || !byVisitor.allowed) return { outcome: "LIMITED" };
+  // The daily email cap counts only requests that passed the hourly email and visitor limits: a refused
+  // request must not use up the day (anyone could otherwise lock an email out by repeating requests, and a
+  // client pressing "send" again would lock themselves out). It runs before the scope lookup, so LIMITED
+  // and the statements run never depend on whether the email is on file.
+  const allowedSoFar = byEmail.allowed && byVisitor.allowed;
+  const byEmailDay = allowedSoFar
+    ? await checkRateLimit(store, "code-email-day", hashEmail(email), { now, cleanup: false })
+    : { allowed: false };
+  if (!allowedSoFar || !byEmailDay.allowed) return { outcome: "LIMITED" };
   if (deps.cleanup ?? Math.random() < 0.01) await cleanupPortalSignIns(store, now);
 
   // The rate-limit counts above are committed on their own; the lock, the re-read and the new code are one

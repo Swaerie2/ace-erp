@@ -99,7 +99,7 @@ export function WelcomeForm({ step }: { step: WelcomeStep }) {
             <>
               {" "}
               <Link href={state.continueHref} className="underline">
-                Go to your quotes
+                Continue to your quotes
               </Link>
             </>
           ) : null}

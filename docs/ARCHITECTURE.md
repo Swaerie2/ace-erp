@@ -153,8 +153,9 @@ These apply to every module. A module is not finished until it follows all of th
   other table that holds customer data, and drive that test from the set of scrubbed fields.
 - Imported customers have no per-customer audit row (the import writes one line with counts).
 - Portal ids are bound by the signed-in scope in core; staff form ids are still not bound to the
-  customer in the URL (the new staff actions use the contact's real customer for the change and the
-  form id only for the redirect). Bind them as a follow-up.
+  customer in the URL. The new Invite to portal and Remove access actions look up the contact's real
+  customer for the change and the redirect; saving and removing a contact still redirect by the form
+  id. Bind them as a follow-up.
 - The database tests use some fixed emails and phone numbers, and `test-db.mjs` has no allow-list
   for which database it runs against. Check `.env.local` points at the development database before
   running `npm run test:db`.
@@ -386,8 +387,11 @@ These apply to every module. A module is not finished until it follows all of th
   of that customer.
 - A sign-in request that is sent (SENT) and one with no match (NO_MATCH) differ by a few milliseconds
   of database work. Accepted.
-- The rate limits use fixed hour windows, so up to double the limit can get through across a window
-  boundary.
+- The rate limits use fixed windows (hour windows, and a UTC-day window for the daily email cap), so up
+  to double the limit (up to 20 code requests around midnight UTC) can get through across a window
+  boundary. A per-email cap also means someone can keep one email at its daily cap by spacing requests
+  (3 per hour over 4 hours); that is inherent to a per-email limit, and the hourly and visitor limits
+  slow it down.
 - The signed-in header rules in `apps/portal/next.config.ts` are an allow-list: any NEW signed-in route
   must be added there, or it goes out without `no-store` and `noindex`.
 - The `__Host-` cookie set and clear could not be tested over http. Check them on the first https

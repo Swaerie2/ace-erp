@@ -7,6 +7,7 @@ import { hashIp } from "../quotes/bots";
 import { owner } from "../quotes/test-helpers";
 import { dbTestsEnabled, withRollback } from "../testing/rollback";
 import { hashSignInCode, newCodeSalt } from "./codes";
+import { hashEmail } from "./email-address";
 import { loadPortalScope } from "./scope";
 import { hashSessionToken } from "./session-token";
 import {
@@ -314,6 +315,46 @@ describe.skipIf(!dbTestsEnabled)("portal sign-in, run as ace_portal", () => {
       });
       expect(buckets.length).toBeGreaterThan(0);
       expect(JSON.stringify(buckets)).not.toContain(client.email);
+    });
+  });
+
+  it("does not use up the daily cap with refused requests", async () => {
+    await withRollback(async (tx) => {
+      const client = await makeClient(tx);
+      const unknown = `${randomUUID()}@example.com`;
+      const box = mailbox();
+      const day = new Date("2026-11-23T00:00:00.000Z").getTime();
+      const at = (hour: number) => new Date(day + hour * 60 * MIN + 5 * MIN);
+      const ask = (email: string, now: Date) =>
+        asPortal(tx, () =>
+          requestSignInCode(
+            tx,
+            { email, ipHash: visitor() },
+            { send: box.send, now, cleanup: false },
+          ),
+        );
+      for (const email of [client.email, unknown]) {
+        const allowed = email === client.email ? "SENT" : "NO_MATCH";
+        // Hour 1: 3 allowed, then 5 refused by the hourly limit.
+        for (let i = 0; i < 3; i++) expect((await ask(email, at(1))).outcome).toBe(allowed);
+        for (let i = 0; i < 5; i++) expect(await ask(email, at(1))).toEqual({ outcome: "LIMITED" });
+        // Hours 2 and 3 still get their 3 each: the refused five did not count against the day.
+        for (const hour of [2, 3]) {
+          for (let i = 0; i < 3; i++) {
+            expect((await ask(email, at(hour))).outcome, `hour ${hour}`).toBe(allowed);
+          }
+        }
+        // The day counter holds the 9 allowed requests only, not the 5 refused ones.
+        const day9 = await tx.publicLinkHit.findMany({
+          where: { bucket: `code-email-day:${hashEmail(email)}` },
+          select: { count: true },
+        });
+        expect(day9.map((r) => r.count)).toEqual([9]);
+        // One more is allowed, and then the day is full (10).
+        expect((await ask(email, at(4))).outcome).toBe(allowed);
+        expect(await ask(email, at(5))).toEqual({ outcome: "LIMITED" });
+      }
+      expect(box.sent).toHaveLength(10);
     });
   });
 
