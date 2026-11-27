@@ -21,7 +21,7 @@ type Tx = Parameters<Parameters<typeof withRollback>[0]>[0];
 const AS_PORTAL = `SET LOCAL ROLE "ace_portal"`;
 
 const u32 = (n: number) => [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
-/** A PNG header the inspection accepts (signature and IHDR). Enough for storage tests. */
+/** A PNG the inspection accepts (signature, IHDR, IEND). Enough for storage tests. */
 const png = (width = 64, height = 64) =>
   Uint8Array.from([
     0x89,
@@ -48,6 +48,7 @@ const png = (width = 64, height = 64) =>
     0,
     0,
     0,
+    ...[0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82],
   ]);
 /** SOI then a SOF0 with the size. */
 const jpeg = () =>
@@ -79,6 +80,12 @@ async function clean(tx: Tx) {
     select: { id: true },
   });
 }
+
+/** From a second connection: fails at once if another open transaction holds the settings row lock. */
+const probeSettingsLock = () =>
+  withRollback(async (tx) => {
+    await tx.$queryRaw`select "id" from "organisation_settings" where "id" = 'singleton' for update nowait`;
+  });
 
 const ownerLines = async (tx: Tx) =>
   (await auditFor(tx, "company_profile", "singleton")).filter((l) => l.actorId === owner.id);
@@ -234,14 +241,24 @@ describe.skipIf(!dbTestsEnabled)("company profile and address", () => {
 
   it("an address save locks the settings row first, even when it changes nothing", async () => {
     await withRollback(async (first) => {
-      await clean(first);
-      await updateCompanyAddress(first, owner, BLANK);
-      const second = withRollback(async (tx) => {
-        await tx.$executeRaw`set local lock_timeout = '1000ms'`;
-        await updateCompanyAddress(tx, owner, ADDRESS);
-      });
-      await expect(second).rejects.toThrow(/lock timeout/i);
+      // No other write in `first`: the current address saved back unchanged is a true no-op, so any lock
+      // `first` holds on the settings row afterwards can only come from updateCompanyAddress itself.
+      const current = (await getCompanyProfile(first, owner)).address;
+      await updateCompanyAddress(first, owner, current);
+      expect(await ownerLines(first)).toEqual([]);
+      await expect(probeSettingsLock()).rejects.toThrow(/could not obtain lock/i);
     });
+  });
+
+  it("a logo save locks the settings row too", async () => {
+    await withRollback(async (first) => {
+      await setCompanyLogo(first, owner, png());
+      await expect(probeSettingsLock()).rejects.toThrow(/could not obtain lock/i);
+    });
+  });
+
+  it("the lock probe succeeds when nothing holds the row", async () => {
+    await expect(probeSettingsLock()).resolves.toBeUndefined();
   });
 });
 

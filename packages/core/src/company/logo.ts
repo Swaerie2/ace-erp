@@ -17,6 +17,7 @@ const PROBLEMS = {
   tooBig: "Use a picture of 500 KB or less.",
   wrongType: "Use a PNG or JPEG picture.",
   unreadable: "The picture could not be read. Save it again and try once more.",
+  damaged: "That picture looks damaged. Save it again and try once more.",
   jpegKind: "This kind of JPEG cannot be used. Save it again as a standard JPEG.",
   size: `Use a picture from ${MIN_LOGO_PIXELS} to ${MAX_LOGO_PIXELS} pixels wide and high.`,
 } as const;
@@ -24,6 +25,20 @@ const PROBLEMS = {
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] as const;
 /** Signature (8), IHDR length and type (8), IHDR data (13) and its CRC (4). */
 const PNG_HEADER_BYTES = 33;
+
+/** The IEND chunk every complete PNG ends with: length 0, the type, and its fixed CRC. */
+const PNG_IEND = [0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82] as const;
+
+/** A complete PNG ends with IEND as its very last 12 bytes. */
+const pngEndsWell = (b: Uint8Array) =>
+  b.length >= PNG_IEND.length && PNG_IEND.every((x, i) => b[b.length - PNG_IEND.length + i] === x);
+
+/** A complete JPEG ends with the end-of-image marker FF D9; only zero padding may follow it. */
+function jpegEndsWell(b: Uint8Array): boolean {
+  let end = b.length;
+  while (end > 0 && b[end - 1] === 0) end -= 1;
+  return end >= 2 && b[end - 2] === 0xff && b[end - 1] === 0xd9;
+}
 
 const startsWith = (bytes: Uint8Array, prefix: readonly number[]) =>
   bytes.length >= prefix.length && prefix.every((b, i) => bytes[i] === b);
@@ -85,17 +100,22 @@ export function inspectLogo(bytes: Uint8Array): LogoInspection {
 
   let contentType: LogoContentType;
   let size: Size | "kind" | null;
+  let endsWell: boolean;
   if (startsWith(bytes, PNG_SIGNATURE)) {
     contentType = "image/png";
     size = pngSize(bytes);
+    endsWell = pngEndsWell(bytes);
   } else if (startsWith(bytes, [0xff, 0xd8, 0xff])) {
     contentType = "image/jpeg";
     size = jpegSize(bytes);
+    endsWell = jpegEndsWell(bytes);
   } else {
     return { ok: false, problem: PROBLEMS.wrongType };
   }
   if (size === "kind") return { ok: false, problem: PROBLEMS.jpegKind };
   if (size === null) return { ok: false, problem: PROBLEMS.unreadable };
+  // The header can be fine while the rest is cut off (an interrupted download or copy).
+  if (!endsWell) return { ok: false, problem: PROBLEMS.damaged };
   const fits = (n: number) => n >= MIN_LOGO_PIXELS && n <= MAX_LOGO_PIXELS;
   if (!fits(size.width) || !fits(size.height)) return { ok: false, problem: PROBLEMS.size };
   return { ok: true, contentType, width: size.width, height: size.height, byteSize: bytes.length };

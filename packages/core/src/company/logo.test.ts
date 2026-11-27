@@ -8,8 +8,14 @@ const NOT_AN_IMAGE = "Use a PNG or JPEG picture.";
 const u32 = (n: number) => [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
 const ascii = (text: string) => [...text].map((c) => c.charCodeAt(0));
 
-/** The signature and an IHDR chunk (CRC not checked by the inspection, so zeros do). */
-function pngHeader(width: number, height: number): number[] {
+/** The IEND chunk every complete PNG ends with (length 0, type, fixed CRC). */
+const IEND = [0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82];
+
+/**
+ * The signature, an IHDR chunk (CRC not checked by the inspection, so zeros do), any extra chunk bytes,
+ * then IEND, so the file ends like a complete PNG.
+ */
+function pngHeader(width: number, height: number, extra: number[] = []): number[] {
   return [
     ...PNG_SIGNATURE,
     ...u32(13),
@@ -25,6 +31,8 @@ function pngHeader(width: number, height: number): number[] {
     0,
     0,
     0,
+    ...extra,
+    ...IEND,
   ];
 }
 
@@ -118,7 +126,7 @@ describe("inspectLogo", () => {
   });
 
   it("accepts a PNG with an animation chunk as a plain PNG", () => {
-    const bytes = Uint8Array.from([...pngHeader(64, 64), ...u32(8), ...ascii("acTL"), 0, 0, 0, 2]);
+    const bytes = Uint8Array.from(pngHeader(64, 64, [...u32(8), ...ascii("acTL"), 0, 0, 0, 2]));
     expect(inspectLogo(bytes)).toMatchObject({ ok: true, contentType: "image/png" });
   });
 
@@ -194,6 +202,30 @@ describe("inspectLogo", () => {
       const result = inspectLogo(full.slice(0, cut));
       expect(result, `jpeg cut at ${cut}`).toEqual({ ok: false, problem: unreadable });
     }
+  });
+
+  it("refuses a PNG or JPEG whose header is fine but whose end is missing", () => {
+    const damaged = "That picture looks damaged. Save it again and try once more.";
+    const png = pngHeader(100, 100);
+    expect(inspectLogo(Uint8Array.from(png.slice(0, png.length - 12)))).toEqual({
+      ok: false,
+      problem: damaged,
+    });
+    expect(inspectLogo(Uint8Array.from(png.slice(0, png.length - 1)))).toEqual({
+      ok: false,
+      problem: damaged,
+    });
+    const real = realPng(40, 40);
+    expect(inspectLogo(real.slice(0, real.length - 20))).toEqual({ ok: false, problem: damaged });
+    expect(inspectLogo(Uint8Array.from([...real, 0]))).toEqual({ ok: false, problem: damaged });
+    const full = jpeg(100, 100);
+    expect(inspectLogo(full.slice(0, full.length - 2))).toEqual({ ok: false, problem: damaged });
+    expect(inspectLogo(full.slice(0, full.length - 1))).toEqual({ ok: false, problem: damaged });
+    expect(inspectLogo(Uint8Array.from([...full, 0x41]))).toEqual({ ok: false, problem: damaged });
+  });
+
+  it("accepts a JPEG with zero padding after its end marker", () => {
+    expect(inspectLogo(Uint8Array.from([...jpeg(100, 100), 0, 0, 0]))).toMatchObject({ ok: true });
   });
 
   it("refuses a hostile JPEG (zero-length segment, image data before the size) without looping", () => {
