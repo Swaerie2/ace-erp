@@ -13,6 +13,7 @@ import {
   getDb,
   inTx,
   INVOICE_MESSAGES,
+  InvoiceDraftConflictError,
   issueAllDrafts,
   issueInvoice,
   MANAGEMENT,
@@ -183,6 +184,14 @@ export async function saveInvoiceDraftAction(
     // saveInvoiceDraft runs the full draft schema again (repeated line ids, limits).
     await inTx((tx) => saveInvoiceDraft(tx, actor, id.data, parsed.input));
   } catch (error) {
+    if (error instanceof InvoiceDraftConflictError) {
+      // Core's sentence, plus a hint that only the app gives (a reload loses what was typed).
+      return {
+        error: `${error.message} Copy anything you typed before you reload.`,
+        values,
+        nonce: Date.now(),
+      };
+    }
     return failure(error, values);
   }
   redirect(`/invoices/${id.data}?notice=saved`);

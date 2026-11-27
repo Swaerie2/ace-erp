@@ -29,6 +29,7 @@ import {
   dismissReportAction,
   resendInvoiceEmailAction,
 } from "../actions";
+import { PendingButton } from "../pending-button";
 import { InvoiceStatusBadge } from "../status-badge";
 import { DraftForm } from "./draft-form";
 import { IssueForm, VoidForm } from "./invoice-forms";
@@ -190,9 +191,11 @@ export default async function InvoicePage({
                   ? "Deleting skips this month's invoice for this customer. If you run the same month again, the draft is made again with the amounts as they are then."
                   : "Deleting removes this draft and its lines. Nothing was sent, so the customer sees nothing."}
             </p>
-            <button type="submit" className={dangerButtonClass}>
-              Yes, delete the draft
-            </button>
+            <PendingButton
+              label="Yes, delete the draft"
+              pendingLabel="Deleting..."
+              className={dangerButtonClass}
+            />
           </form>
         </details>
       ) : null}
@@ -232,9 +235,11 @@ export default async function InvoicePage({
           {inv.status === "ISSUED" ? (
             <form action={resendInvoiceEmailAction}>
               <input type="hidden" name="id" value={inv.id} />
-              <button type="submit" className={secondaryButtonClass}>
-                Resend email
-              </button>
+              <PendingButton
+                label="Resend email"
+                pendingLabel="Sending..."
+                className={secondaryButtonClass}
+              />
             </form>
           ) : null}
           {inv.allocations.length > 0 ? (
@@ -295,9 +300,11 @@ export default async function InvoicePage({
                   <form action={dismissReportAction}>
                     <input type="hidden" name="id" value={r.id} />
                     <input type="hidden" name="back" value={inv.id} />
-                    <button type="submit" className={secondaryButtonClass}>
-                      Dismiss
-                    </button>
+                    <PendingButton
+                      label="Dismiss"
+                      pendingLabel="Dismissing..."
+                      className={secondaryButtonClass}
+                    />
                   </form>
                 </span>
               </li>

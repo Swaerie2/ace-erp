@@ -20,7 +20,14 @@ import { toActor } from "@/lib/actor";
 import { requireStaff } from "@/lib/auth";
 import { first, nonNegativeInt, positiveInt } from "@/lib/search-params";
 import { issueAllAction, runMonthAction } from "./actions";
+import { PendingButton } from "./pending-button";
 import { InvoiceStatusBadge } from "./status-badge";
+
+/**
+ * The monthly run and "Issue all" are server actions on this page and can take a while (one transaction per
+ * customer or draft), so allow up to 5 minutes instead of the platform's shorter default.
+ */
+export const maxDuration = 300;
 
 type Param = string | string[] | undefined;
 type Search = {
@@ -81,7 +88,7 @@ function pageNotice(sp: Search): NoticeText | null {
       text:
         `Issued ${plural(n(sp.issued), "invoice")}. The emails go out in the background.` +
         (failed > 0
-          ? ` ${plural(failed, "draft")} could not be issued: open each one and press Issue to see why.`
+          ? ` ${failed} could not be issued and ${failed === 1 ? "is" : "are"} still in the list above. Open one to see why.`
           : "") +
         (remaining > 0
           ? ` ${plural(remaining, "draft")} remain: press "Issue all" again to issue the next ${Math.min(ISSUE_BATCH, remaining)}.`
@@ -166,9 +173,11 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
               className={`${inputClass} min-h-10`}
             />
           </label>
-          <button type="submit" className={primaryLinkClass}>
-            Create this month&apos;s invoices
-          </button>
+          <PendingButton
+            label="Create this month's invoices"
+            pendingLabel="Creating..."
+            className={primaryLinkClass}
+          />
         </form>
       </section>
 
@@ -240,11 +249,15 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
                       ? ` One press issues the oldest ${ISSUE_BATCH}; press again for the rest.`
                       : ""}
                   </p>
-                  <button type="submit" className={dangerButtonClass}>
-                    {drafts.length > ISSUE_BATCH
-                      ? `Yes, issue and email the oldest ${batch}`
-                      : "Yes, issue and email them all"}
-                  </button>
+                  <PendingButton
+                    label={
+                      drafts.length > ISSUE_BATCH
+                        ? `Yes, issue and email the oldest ${batch}`
+                        : "Yes, issue and email them all"
+                    }
+                    pendingLabel="Issuing... (this can take a minute)"
+                    className={dangerButtonClass}
+                  />
                 </form>
               </details>
             ) : null}

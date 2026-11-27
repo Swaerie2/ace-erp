@@ -16,6 +16,7 @@ import { toActor } from "@/lib/actor";
 import { requireStaff } from "@/lib/auth";
 import { first } from "@/lib/search-params";
 import { createOnceOffAction } from "../actions";
+import { PendingButton } from "../pending-button";
 
 type Param = string | string[] | undefined;
 
@@ -130,9 +131,11 @@ export default async function NewInvoicePage({
                       <form action={createOnceOffAction}>
                         <input type="hidden" name="customerId" value={customer.id} />
                         <input type="hidden" name="quoteId" value={q.id} />
-                        <button type="submit" className={secondaryButtonClass}>
-                          Invoice this quote
-                        </button>
+                        <PendingButton
+                          label="Invoice this quote"
+                          pendingLabel="Creating..."
+                          className={secondaryButtonClass}
+                        />
                       </form>
                     )}
                   </li>
@@ -149,9 +152,11 @@ export default async function NewInvoicePage({
             </p>
             <form action={createOnceOffAction}>
               <input type="hidden" name="customerId" value={customer.id} />
-              <button type="submit" className={secondaryButtonClass}>
-                Start an empty invoice
-              </button>
+              <PendingButton
+                label="Start an empty invoice"
+                pendingLabel="Creating..."
+                className={secondaryButtonClass}
+              />
             </form>
           </section>
         </>
