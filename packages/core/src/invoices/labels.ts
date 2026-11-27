@@ -61,6 +61,7 @@ export const DRAFT_WARNING_LABELS: Record<DraftWarning, string> = {
 export const RUN_SKIP_REASONS = [
   "alreadyInvoiced",
   "notStarted",
+  "nothingToBill",
   "lead",
   "paused",
   "archived",
@@ -71,6 +72,7 @@ export type RunSkipReason = (typeof RUN_SKIP_REASONS)[number];
 export const RUN_SKIP_LABELS: Record<RunSkipReason, string> = {
   alreadyInvoiced: "already invoiced for that month",
   notStarted: "service not started by then",
+  nothingToBill: "nothing priced to bill that month",
   lead: "still a lead",
   paused: "paused",
   archived: "archived",

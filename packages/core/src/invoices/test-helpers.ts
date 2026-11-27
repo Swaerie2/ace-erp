@@ -136,9 +136,12 @@ export async function makeAcceptedQuote(
   input: {
     customerId: string;
     propertyId: string;
-    startDate: string;
+    /** null: no start date (the run falls back to the acceptance date). */
+    startDate: string | null;
     lines: TestQuoteLine[];
-    acceptedAt?: Date;
+    /** null: no acceptance date either (only possible on hand-edited data). */
+    acceptedAt?: Date | null;
+    /** Ended some other way than by a replacement (agreementEndedAt set, agreementReplacedById null). */
     agreementEnded?: boolean;
   },
 ) {
@@ -151,10 +154,10 @@ export async function makeAcceptedQuote(
       numberSeq: randomInt(1, 2_000_000_000),
       validUntil: fromDateString("2099-12-31"),
       issuedAt: new Date(),
-      acceptedAt: input.acceptedAt ?? new Date(),
+      acceptedAt: input.acceptedAt === undefined ? new Date() : input.acceptedAt,
       acceptedMethod: "PHONE",
       acceptedByName: "ZZ E2E Acceptor",
-      acceptedStartDate: fromDateString(input.startDate),
+      acceptedStartDate: input.startDate ? fromDateString(input.startDate) : null,
       ...(input.agreementEnded ? { agreementEndedAt: new Date() } : {}),
       lines: {
         create: input.lines.map((l, index) => ({
@@ -171,6 +174,19 @@ export async function makeAcceptedQuote(
     select: { id: true, lines: { orderBy: { sortOrder: "asc" }, select: { id: true } } },
   });
   return { quoteId: quote.id, lineIds: quote.lines.map((l) => l.id) };
+}
+
+/** Marks `oldQuoteId` as replaced by `newQuoteId`, the way accepting a replacement monthly quote does. */
+export async function replaceAgreement(
+  tx: Tx,
+  oldQuoteId: string,
+  newQuoteId: string,
+): Promise<void> {
+  await tx.quote.update({
+    where: { id: oldQuoteId },
+    data: { agreementEndedAt: new Date(), agreementReplacedById: newQuoteId },
+    select: { id: true },
+  });
 }
 
 /** An ISSUED invoice written straight to the database (year 2099, a random number: no counter). */

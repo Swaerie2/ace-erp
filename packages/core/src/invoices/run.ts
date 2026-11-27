@@ -38,10 +38,28 @@ export const MONTHLY_AGREEMENT: Prisma.QuoteLineWhereInput = {
   OR: [{ lineKind: "PRICED" }, { lineKind: "OPTIONAL", chosen: true }],
 };
 
-/** The same notion of "current monthly agreement" as `getPropertyAgreement`, on a property still in use. */
-const CURRENT_AGREEMENT = {
+/** The same rule as `MONTHLY_AGREEMENT`, for lines already read (keep the two in step). */
+export function isMonthlyAgreementLine(line: {
+  billing: string | null;
+  lineKind: string;
+  chosen: boolean;
+}): boolean {
+  return (
+    line.billing === "MONTHLY" &&
+    (line.lineKind === "PRICED" || (line.lineKind === "OPTIONAL" && line.chosen))
+  );
+}
+
+/**
+ * The monthly agreements the run may bill, on a property still in use: the current ones (the same notion as
+ * `getPropertyAgreement`) AND the ones a later accepted quote replaced (accepting a replacement ends the old
+ * agreement at once, but the owner's rule is "old price until the new start month"). An agreement ended any
+ * other way (`agreementEndedAt` set without `agreementReplacedById`) is never used. Reversing a replacement
+ * clears both columns on the old quote, so it is current again.
+ */
+const BILLABLE_AGREEMENT = {
   status: "ACCEPTED",
-  agreementEndedAt: null,
+  OR: [{ agreementEndedAt: null }, { agreementReplacedById: { not: null } }],
   property: { archivedAt: null },
   lines: { some: MONTHLY_AGREEMENT },
 } satisfies Prisma.QuoteWhereInput;
@@ -61,16 +79,41 @@ const skipped = (reason: RunSkipReason): Skipped => ({ reason });
 
 type Context = { actor: Actor; runMonth: string; today: string; lateFeeCents: number };
 
-/** The current agreement of each of the customer's properties (the latest accepted), sorted by label. */
-async function loadAgreements(tx: InvoiceStore, customerId: string) {
+/** The start of an agreement: its accepted start date, else its acceptance date; null means never started. */
+function startOf(q: { acceptedStartDate: Date | null; acceptedAt: Date | null }): string | null {
+  if (q.acceptedStartDate) return toDateString(q.acceptedStartDate);
+  return q.acceptedAt ? todaySA(q.acceptedAt) : null;
+}
+
+/** Later start first; on the same start the later acceptance (then the larger id) wins. */
+function laterFirst(
+  a: { start: string; acceptedAt: Date | null; id: string },
+  b: { start: string; acceptedAt: Date | null; id: string },
+): number {
+  if (a.start !== b.start) return a.start > b.start ? -1 : 1;
+  const at = (a.acceptedAt?.getTime() ?? 0) - (b.acceptedAt?.getTime() ?? 0);
+  if (at !== 0) return -at;
+  return a.id > b.id ? -1 : a.id < b.id ? 1 : 0;
+}
+
+/**
+ * The agreement IN FORCE on each of the customer's properties for the service month, sorted by property label
+ * (then id). In force: of the property's billable agreements, the one with the latest start on or before the last
+ * day of the service month. A replaced agreement counts only while it started before its replacement (one
+ * replaced before it ever started is superseded altogether). `partMonth` is true only when the property has no
+ * earlier-starting agreement at all: a brand new agreement may be pro-rated, a replacement is billed for the
+ * whole month at its own price.
+ */
+async function loadAgreements(tx: InvoiceStore, customerId: string, serviceMonth: string) {
   const quotes = await tx.quote.findMany({
-    where: { customerId, ...CURRENT_AGREEMENT },
-    orderBy: [{ acceptedAt: "desc" }, { id: "desc" }],
+    where: { customerId, ...BILLABLE_AGREEMENT },
     select: {
       id: true,
       propertyId: true,
       acceptedAt: true,
       acceptedStartDate: true,
+      agreementEndedAt: true,
+      agreementReplacedById: true,
       property: { select: { label: true } },
       lines: {
         orderBy: { sortOrder: "asc" },
@@ -85,24 +128,37 @@ async function loadAgreements(tx: InvoiceStore, customerId: string) {
       },
     },
   });
-  const byProperty = new Map<string, (typeof quotes)[number]>();
-  for (const q of quotes) if (!byProperty.has(q.propertyId)) byProperty.set(q.propertyId, q);
-  return [...byProperty.values()]
-    .map((q) => ({
-      ...q,
-      start: q.acceptedStartDate
-        ? toDateString(q.acceptedStartDate)
-        : todaySA(q.acceptedAt ?? new Date()),
-    }))
-    .sort((a, b) =>
-      a.property.label !== b.property.label
-        ? a.property.label < b.property.label
-          ? -1
-          : 1
-        : a.propertyId < b.propertyId
-          ? -1
-          : 1,
-    );
+  const started = quotes.flatMap((q) => {
+    const start = startOf(q);
+    return start ? [{ ...q, start }] : [];
+  });
+  const startById = new Map(started.map((q) => [q.id, q.start]));
+  const usable = started.filter((q) => {
+    if (q.agreementEndedAt === null) return true;
+    const replacerStart = q.agreementReplacedById
+      ? startById.get(q.agreementReplacedById)
+      : undefined;
+    return replacerStart !== undefined && q.start < replacerStart;
+  });
+  const monthEnd = lastDayOf(serviceMonth);
+  const byProperty = new Map<string, typeof usable>();
+  for (const q of usable)
+    byProperty.set(q.propertyId, [...(byProperty.get(q.propertyId) ?? []), q]);
+  const inForce = [...byProperty.values()].flatMap((list) => {
+    const current = list.filter((q) => q.start <= monthEnd).sort(laterFirst)[0];
+    if (!current) return [];
+    const partMonth = !list.some((q) => q.id !== current.id && q.start < current.start);
+    return [{ ...current, partMonth }];
+  });
+  return inForce.sort((a, b) =>
+    a.property.label !== b.property.label
+      ? a.property.label < b.property.label
+        ? -1
+        : 1
+      : a.propertyId < b.propertyId
+        ? -1
+        : 1,
+  );
 }
 
 /** The suggested late-fee lines: one per overdue issued invoice that has no live fee charged against it yet. */
@@ -136,6 +192,37 @@ async function lateFeeLines(tx: InvoiceStore, customerId: string, ctx: Context) 
       amountCents: ctx.lateFeeCents,
       forInvoiceId: c.id,
     }));
+}
+
+/**
+ * The service lines of the agreements in force, in order: properties by label, then each agreement's monthly
+ * lines in quote order (lines of zero left out). Only a brand new agreement starting after the 1st of the service
+ * month is pro-rated; a replacement is billed for the whole month.
+ */
+function serviceLinesFor(
+  agreements: Awaited<ReturnType<typeof loadAgreements>>,
+  serviceMonth: string,
+) {
+  return agreements.flatMap((a) =>
+    a.lines
+      .filter((l) => isMonthlyAgreementLine(l) && (l.amountCents ?? 0) > 0)
+      .map((l) => {
+        const amount = l.amountCents ?? 0;
+        const base = `${a.property.label}: ${l.description}`;
+        const part = a.partMonth ? proRata(amount, a.start, serviceMonth) : null;
+        return {
+          kind: l.lineKind === "PRICED" ? ("SERVICE" as const) : ("OPTIONAL" as const),
+          description: fitDescription(
+            part
+              ? `${base} (part month: ${part.days} of ${part.daysInMonth} days from ${formatDayMonth(a.start)})`
+              : base,
+          ),
+          amountCents: part ? part.amountCents : amount,
+          propertyId: a.propertyId,
+          sourceQuoteLineId: l.id,
+        };
+      }),
+  );
 }
 
 /**
@@ -176,10 +263,12 @@ async function draftForCustomer(
       },
     });
     if (existing > 0) return skipped("alreadyInvoiced");
-    const monthEnd = lastDayOf(serviceMonth);
-    const agreements = (await loadAgreements(tx, customerId)).filter((a) => a.start <= monthEnd);
+    const agreements = await loadAgreements(tx, customerId, serviceMonth);
     if (agreements.length === 0) return skipped("notStarted");
-    return { customer, serviceMonth, agreements };
+    const serviceLines = serviceLinesFor(agreements, serviceMonth);
+    // Nothing priced above zero: no draft (an empty or fee-only monthly draft would only confuse).
+    if (serviceLines.length === 0) return skipped("nothingToBill");
+    return { customer, serviceMonth, serviceLines };
   };
 
   const first = await decide();
@@ -188,30 +277,7 @@ async function draftForCustomer(
   const plan = await decide();
   if ("reason" in plan) return plan;
 
-  const serviceLines = plan.agreements.flatMap((a) =>
-    a.lines
-      .filter(
-        (l) =>
-          l.billing === "MONTHLY" &&
-          (l.lineKind === "PRICED" || (l.lineKind === "OPTIONAL" && l.chosen)) &&
-          (l.amountCents ?? 0) > 0,
-      )
-      .map((l) => {
-        const base = `${a.property.label}: ${l.description}`;
-        const part = proRata(l.amountCents ?? 0, a.start, plan.serviceMonth);
-        return {
-          kind: l.lineKind === "PRICED" ? ("SERVICE" as const) : ("OPTIONAL" as const),
-          description: fitDescription(
-            part
-              ? `${base} (part month: ${part.days} of ${part.daysInMonth} days from ${formatDayMonth(a.start)})`
-              : base,
-          ),
-          amountCents: part ? part.amountCents : (l.amountCents ?? 0),
-          propertyId: a.propertyId,
-          sourceQuoteLineId: l.id,
-        };
-      }),
-  );
+  const serviceLines = plan.serviceLines;
   const fees = await lateFeeLines(tx, customerId, ctx);
   const lines = [...serviceLines, ...fees].filter((l) => l.amountCents > 0);
   const created = await tx.invoice.create({
@@ -258,7 +324,7 @@ export async function createMonthlyDrafts(
     ? [...new Set(deps.only.filter(isUuid).map((id) => id.toLowerCase()))]
     : null;
   const rows = await store.quote.findMany({
-    where: { ...CURRENT_AGREEMENT, ...(only ? { customerId: { in: only } } : {}) },
+    where: { ...BILLABLE_AGREEMENT, ...(only ? { customerId: { in: only } } : {}) },
     distinct: ["customerId"],
     orderBy: { customerId: "asc" },
     select: { customerId: true, customer: { select: { displayName: true } } },
@@ -280,6 +346,8 @@ export async function createMonthlyDrafts(
         skip(outcome.reason);
       }
     } catch (error) {
+      // Unreachable today (the role is checked above), but a ForbiddenError stops the whole run: the drafts
+      // already committed stay, and the caller gets no result listing them.
       if (error instanceof ForbiddenError) throw error;
       // Outside the transaction: a refusal by the once-a-month index has already rolled it back.
       if (isMonthlyDuplicate(error)) {

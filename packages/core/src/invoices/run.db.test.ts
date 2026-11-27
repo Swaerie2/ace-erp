@@ -13,13 +13,16 @@ import {
   makePayment,
   manager,
   optionalLine,
+  replaceAgreement,
   sameTx,
   serviceLine,
 } from "./test-helpers";
 
 const TODAY = "2026-11-20";
 
-async function linesOf(tx: Parameters<Parameters<typeof withRollback>[0]>[0], invoiceId: string) {
+type Tx = Parameters<Parameters<typeof withRollback>[0]>[0];
+
+async function linesOf(tx: Tx, invoiceId: string) {
   const inv = await tx.invoice.findUniqueOrThrow({
     where: { id: invoiceId },
     select: {
@@ -359,6 +362,282 @@ describe.skipIf(!dbTestsEnabled)("the monthly run", () => {
       await expect(
         createMonthlyDrafts(tx, manager, "2026-11", { run: forbidden, only, today: TODAY }),
       ).rejects.toBeInstanceOf(ForbiddenError);
+    });
+  });
+
+  describe("replacement agreements: old price until the new start month", () => {
+    const OLD = "Weekly garden maintenance";
+    const NEW = "Weekly garden care, new rate";
+
+    async function withReplacement(tx: Tx, billingTiming: "PRE" | "POST") {
+      const c = await makeBillingCustomer(tx, { billingTiming });
+      const old = await makeAcceptedQuote(tx, {
+        customerId: c.customerId,
+        propertyId: c.propertyId,
+        startDate: "2026-01-01",
+        acceptedAt: new Date("2025-12-15T10:00:00Z"),
+        lines: [serviceLine(100000, OLD)],
+      });
+      // Accepted now, starting on 10 December: accepting it ended the old agreement at once.
+      const replacement = await makeAcceptedQuote(tx, {
+        customerId: c.customerId,
+        propertyId: c.propertyId,
+        startDate: "2026-12-10",
+        lines: [serviceLine(110000, NEW)],
+      });
+      await replaceAgreement(tx, old.quoteId, replacement.quoteId);
+      return c;
+    }
+
+    const serviceOf = async (tx: Tx, invoiceId: string | undefined) => {
+      const inv = await linesOf(tx, invoiceId ?? "");
+      return {
+        serviceMonth: inv.serviceMonth,
+        lines: inv.lines.map((l) => [l.description, l.amountCents]),
+      };
+    };
+
+    it("bills a Post client the old price before the new start month, then the new price for the whole month", async () => {
+      await withRollback(async (tx) => {
+        const c = await withReplacement(tx, "POST");
+        const only = [c.customerId];
+        const november = await createMonthlyDrafts(tx, manager, "2026-11", {
+          run: sameTx(tx),
+          only,
+          today: TODAY,
+        });
+        expect(await serviceOf(tx, november.created[0]?.invoiceId)).toEqual({
+          serviceMonth: "2026-11-01",
+          lines: [[`${c.propertyLabel}: ${OLD}`, 100000]],
+        });
+        // December: the replacement starts on the 10th, but a replacement is never pro-rated.
+        const december = await createMonthlyDrafts(tx, manager, "2026-12", {
+          run: sameTx(tx),
+          only,
+          today: "2026-12-20",
+        });
+        expect(await serviceOf(tx, december.created[0]?.invoiceId)).toEqual({
+          serviceMonth: "2026-12-01",
+          lines: [[`${c.propertyLabel}: ${NEW}`, 110000]],
+        });
+      });
+    });
+
+    it("bills a Pre client the old price for November and the new price for December", async () => {
+      await withRollback(async (tx) => {
+        const c = await withReplacement(tx, "PRE");
+        const only = [c.customerId];
+        const october = await createMonthlyDrafts(tx, manager, "2026-10", {
+          run: sameTx(tx),
+          only,
+          today: "2026-10-20",
+        });
+        expect(await serviceOf(tx, october.created[0]?.invoiceId)).toEqual({
+          serviceMonth: "2026-11-01",
+          lines: [[`${c.propertyLabel}: ${OLD}`, 100000]],
+        });
+        const november = await createMonthlyDrafts(tx, manager, "2026-11", {
+          run: sameTx(tx),
+          only,
+          today: TODAY,
+        });
+        expect(await serviceOf(tx, november.created[0]?.invoiceId)).toEqual({
+          serviceMonth: "2026-12-01",
+          lines: [[`${c.propertyLabel}: ${NEW}`, 110000]],
+        });
+      });
+    });
+
+    it("never uses an agreement ended another way, or one replaced before it started", async () => {
+      await withRollback(async (tx) => {
+        // Ended without a replacement: not billed, so the later agreement has not started yet.
+        const ended = await makeBillingCustomer(tx, { billingTiming: "POST" });
+        await makeAcceptedQuote(tx, {
+          customerId: ended.customerId,
+          propertyId: ended.propertyId,
+          startDate: "2026-01-01",
+          acceptedAt: new Date("2025-12-15T10:00:00Z"),
+          lines: [serviceLine(100000, OLD)],
+          agreementEnded: true,
+        });
+        await makeAcceptedQuote(tx, {
+          customerId: ended.customerId,
+          propertyId: ended.propertyId,
+          startDate: "2026-12-10",
+          lines: [serviceLine(110000, NEW)],
+        });
+        // Replaced before it ever started (the replacement starts earlier): only the replacement counts, and
+        // as the property's first agreement, starting on the 1st, it is billed in full.
+        const early = await makeBillingCustomer(tx, { billingTiming: "POST" });
+        const superseded = await makeAcceptedQuote(tx, {
+          customerId: early.customerId,
+          propertyId: early.propertyId,
+          startDate: "2026-11-15",
+          acceptedAt: new Date("2026-10-01T10:00:00Z"),
+          lines: [serviceLine(100000, OLD)],
+        });
+        const corrected = await makeAcceptedQuote(tx, {
+          customerId: early.customerId,
+          propertyId: early.propertyId,
+          startDate: "2026-11-01",
+          lines: [serviceLine(110000, NEW)],
+        });
+        await replaceAgreement(tx, superseded.quoteId, corrected.quoteId);
+
+        const result = await createMonthlyDrafts(tx, manager, "2026-11", {
+          run: sameTx(tx),
+          only: [ended.customerId, early.customerId],
+          today: TODAY,
+        });
+        expect(result.skipped).toEqual([
+          { customerId: ended.customerId, displayName: ended.displayName, reason: "notStarted" },
+        ]);
+        expect(result.created.map((c) => c.customerId)).toEqual([early.customerId]);
+        expect(await serviceOf(tx, result.created[0]?.invoiceId)).toEqual({
+          serviceMonth: "2026-11-01",
+          lines: [[`${early.propertyLabel}: ${NEW}`, 110000]],
+        });
+      });
+    });
+  });
+
+  it("falls back to the acceptance date, and skips agreements with no start and nothing priced", async () => {
+    await withRollback(async (tx) => {
+      const fallback = await makeBillingCustomer(tx, { billingTiming: "POST" });
+      await makeAcceptedQuote(tx, {
+        customerId: fallback.customerId,
+        propertyId: fallback.propertyId,
+        startDate: null,
+        acceptedAt: new Date("2026-10-05T10:00:00Z"),
+        lines: [serviceLine(50000)],
+      });
+      const noDates = await makeBillingCustomer(tx, { billingTiming: "POST" });
+      await makeAcceptedQuote(tx, {
+        customerId: noDates.customerId,
+        propertyId: noDates.propertyId,
+        startDate: null,
+        acceptedAt: null,
+        lines: [serviceLine(50000)],
+      });
+      // A monthly line with no amount, and an overdue invoice: no empty or fee-only draft is made.
+      const unpriced = await makeBillingCustomer(tx, { billingTiming: "POST" });
+      await makeAcceptedQuote(tx, {
+        customerId: unpriced.customerId,
+        propertyId: unpriced.propertyId,
+        startDate: "2026-10-01",
+        lines: [{ ...serviceLine(1), amountCents: null }],
+      });
+      await makeIssuedInvoice(tx, { customerId: unpriced.customerId, dueDate: "2026-10-25" });
+
+      const result = await createMonthlyDrafts(tx, manager, "2026-11", {
+        run: sameTx(tx),
+        only: [fallback.customerId, noDates.customerId, unpriced.customerId],
+        today: TODAY,
+      });
+      expect(result.created.map((c) => c.customerId)).toEqual([fallback.customerId]);
+      const inv = await linesOf(tx, result.created[0]?.invoiceId ?? "");
+      expect(inv.lines.filter((l) => l.kind === "SERVICE").map((l) => l.amountCents)).toEqual([
+        50000,
+      ]);
+      const reasons = new Map(result.skipped.map((s) => [s.customerId, s.reason]));
+      expect(reasons.get(noDates.customerId)).toBe("notStarted");
+      expect(reasons.get(unpriced.customerId)).toBe("nothingToBill");
+      expect(result.skipped).toHaveLength(2);
+      expect(
+        await tx.invoice.count({ where: { customerId: unpriced.customerId, status: "DRAFT" } }),
+      ).toBe(0);
+    });
+  });
+
+  it("adds no fee when the late fee is R0, leaves out archived properties and ignores ids that are not ids", async () => {
+    await withRollback(async (tx) => {
+      await tx.invoiceSettings.update({
+        where: { id: "singleton" },
+        data: { lateFeeCents: 0 },
+        select: { id: true },
+      });
+      const c = await makeBillingCustomer(tx, { billingTiming: "POST" });
+      await makeAcceptedQuote(tx, {
+        customerId: c.customerId,
+        propertyId: c.propertyId,
+        startDate: "2026-01-01",
+        lines: [serviceLine(50000)],
+      });
+      await makeIssuedInvoice(tx, { customerId: c.customerId, dueDate: "2026-10-25" });
+      const shut = await makeBillingCustomer(tx, { billingTiming: "POST" });
+      await makeAcceptedQuote(tx, {
+        customerId: shut.customerId,
+        propertyId: shut.propertyId,
+        startDate: "2026-01-01",
+        lines: [serviceLine(50000)],
+      });
+      await tx.property.update({
+        where: { id: shut.propertyId },
+        data: { archivedAt: new Date() },
+        select: { id: true },
+      });
+
+      const result = await createMonthlyDrafts(tx, manager, "2026-11", {
+        run: sameTx(tx),
+        only: ["not-a-uuid", "", c.customerId.toUpperCase(), shut.customerId],
+        today: TODAY,
+      });
+      expect(result.created.map((r) => r.customerId)).toEqual([c.customerId]);
+      expect(result.skipped).toEqual([]);
+      const draftId = result.created[0]?.invoiceId ?? "";
+      expect((await linesOf(tx, draftId)).lines.map((l) => l.kind)).toEqual(["SERVICE"]);
+      expect((await auditFor(tx, "invoice", draftId))[0]?.after).toEqual({
+        kind: "MONTHLY",
+        via: "run",
+        lineCount: 1,
+        lateFees: 0,
+      });
+    });
+  });
+
+  it("still suggests a fee when the only payment was voided, and on a complex billed to its agency", async () => {
+    await withRollback(async (tx) => {
+      await tx.invoiceSettings.update({
+        where: { id: "singleton" },
+        data: { lateFeeCents: 10000 },
+        select: { id: true },
+      });
+      const agency = await makeBillingCustomer(tx);
+      const complex = await makeBillingCustomer(tx, {
+        managedById: agency.customerId,
+        billingTiming: "POST",
+      });
+      await makeAcceptedQuote(tx, {
+        customerId: complex.customerId,
+        propertyId: complex.propertyId,
+        startDate: "2026-01-01",
+        lines: [serviceLine(50000)],
+      });
+      const overdue = await makeIssuedInvoice(tx, {
+        customerId: complex.customerId,
+        billToCustomerId: agency.customerId,
+        dueDate: "2026-10-25",
+      });
+      // Paid in full, but the payment was voided: the allocation no longer counts.
+      await makePayment(tx, {
+        payerCustomerId: agency.customerId,
+        amountCents: 100000,
+        receivedOn: "2026-10-20",
+        allocations: [{ invoiceId: overdue, amountCents: 100000 }],
+        voided: true,
+      });
+
+      const result = await createMonthlyDrafts(tx, manager, "2026-11", {
+        run: sameTx(tx),
+        only: [complex.customerId],
+        today: TODAY,
+      });
+      const inv = await linesOf(tx, result.created[0]?.invoiceId ?? "");
+      expect(inv.billToCustomerId).toBe(agency.customerId);
+      expect(inv.lines.map((l) => [l.kind, l.amountCents, l.forInvoiceId])).toEqual([
+        ["SERVICE", 50000, null],
+        ["LATE_FEE", 10000, overdue],
+      ]);
     });
   });
 });
