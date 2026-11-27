@@ -41,6 +41,9 @@ export const INVOICE_MESSAGES = {
   billingChanged: "The customer's billing changed while this was being done. Try again.",
   bankMissing: "Enter ACE's bank details in Invoice settings before issuing.",
   archived: "Restore this customer before invoicing.",
+  anonymised: "This customer has been anonymised and cannot be invoiced.",
+  billToInactive:
+    "The customer this invoice is billed to is archived or anonymised. Restore it, or change who the bills go to, before issuing.",
   paymentVoided: "This payment has been voided.",
   notPayersInvoice: "That invoice is not billed to this payer.",
   notIssued: "Payments can only be allocated to issued invoices.",

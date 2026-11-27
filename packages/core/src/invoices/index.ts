@@ -37,3 +37,6 @@ export {
   type InvoiceView,
 } from "./drafts";
 export { createMonthlyDrafts, type RunResult } from "./run";
+export { INVOICE_ACTION_LABELS, listInvoiceActivity, type InvoiceActivityEntry } from "./activity";
+// allocateInvoiceNumber (no role check) is deliberately not exported.
+export { issueAllDrafts, issueInvoice, voidInvoice, type IssueAllResult } from "./issue";
