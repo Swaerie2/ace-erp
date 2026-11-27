@@ -121,14 +121,9 @@ export const contactSchema = z
     phone,
     receivesQuotes: checkbox,
     receivesInvoices: checkbox,
-    portalAccess: checkbox,
   })
   .refine((c) => Boolean(c.email || c.phone), {
     message: "Add an email or a phone number.",
-    path: ["email"],
-  })
-  .refine((c) => !c.portalAccess || Boolean(c.email), {
-    message: "Portal access needs an email address.",
     path: ["email"],
   });
 export type ContactInput = z.output<typeof contactSchema>;

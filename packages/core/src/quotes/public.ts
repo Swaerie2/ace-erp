@@ -12,13 +12,7 @@ import {
 } from "./acceptance";
 import { buildQuoteDocument, type QuoteDocument } from "./document";
 import { publicViewState, type PublicViewState } from "./public-state";
-import {
-  ACT_LIMIT,
-  VIEW_LIMIT,
-  rateBucket,
-  windowStartFor,
-  type RateKind,
-} from "./rate-limit-window";
+import { RATE_LIMITS, rateBucket, windowStartFor, type RateKind } from "./rate-limit-window";
 import {
   displayStatus,
   formatDateSA,
@@ -47,7 +41,7 @@ export type PublicStore = Pick<
   | "$queryRaw"
 >;
 
-const PUBLIC_QUOTE_SELECT = {
+export const PUBLIC_QUOTE_SELECT = {
   id: true,
   customerId: true,
   status: true,
@@ -82,41 +76,31 @@ const PUBLIC_QUOTE_SELECT = {
   },
 } as const satisfies Prisma.QuoteSelect;
 
+export type PublicQuoteRow = Prisma.QuoteGetPayload<{ select: typeof PUBLIC_QUOTE_SELECT }>;
+
+/** What a client may see of one quote: name and property address only, never email, phone or notes. */
+export type PublicQuoteView = {
+  state: PublicViewState;
+  reference: string;
+  doc: QuoteDocument;
+  optionalLines: { id: string; label: string }[];
+  acceptance: {
+    name: string | null;
+    at: string;
+    startDate: string | null;
+    chosen: string[];
+  } | null;
+  declinedAt: string | null;
+  business: { tradingName: string; phone: string; email: string };
+};
+
 export type PublicQuoteResult =
-  | { found: false }
-  | {
-      found: true;
-      state: PublicViewState;
-      reference: string;
-      doc: QuoteDocument;
-      optionalLines: { id: string; label: string }[];
-      acceptance: {
-        name: string | null;
-        at: string;
-        startDate: string | null;
-        chosen: string[];
-      } | null;
-      declinedAt: string | null;
-      newerToken: string | null;
-      business: { tradingName: string; phone: string; email: string };
-    };
+  { found: false } | ({ found: true; newerToken: string | null } & PublicQuoteView);
 
-/** Finds a quote by its private code. Wrong, malformed, revoked and draft codes all give `{ found: false }`. */
-export async function getPublicQuote(
-  store: PublicStore,
-  token: string,
-  now: Date = new Date(),
-): Promise<PublicQuoteResult> {
-  if (!isLinkTokenShape(token)) return { found: false };
-  const q = await store.quote.findUnique({
-    where: { linkToken: token },
-    select: PUBLIC_QUOTE_SELECT,
-  });
-  if (!q) return { found: false };
-  const today = todaySA(now);
+/** Shapes a quote row for a client (the private link and the portal use the same view). Null for a draft. */
+export function buildPublicView(q: PublicQuoteRow, today: string): PublicQuoteView | null {
   const state = publicViewState(q, today);
-  if (!state) return { found: false };
-
+  if (!state) return null;
   const wording = wordingSnapshotSchema.parse(q.wordingSnapshot);
   const reference = formatQuoteReference(q) ?? "";
   const lines = q.lines.map((l) => ({
@@ -145,23 +129,6 @@ export async function getPublicQuote(
     lines,
     wording,
   });
-
-  let newerToken: string | null = null;
-  if (state === "REPLACED" && q.numberYear !== null && q.numberSeq !== null) {
-    const newer = await store.quote.findFirst({
-      where: {
-        numberYear: q.numberYear,
-        numberSeq: q.numberSeq,
-        revision: { gt: q.revision },
-        status: { in: ["ISSUED", "ACCEPTED"] },
-        linkToken: { not: null },
-      },
-      orderBy: { revision: "desc" },
-      select: { linkToken: true },
-    });
-    newerToken = newer?.linkToken ?? null;
-  }
-
   const optionalLines = lines
     .filter((l) => l.lineKind === "OPTIONAL")
     .map((l) => ({
@@ -180,22 +147,52 @@ export async function getPublicQuote(
             .map((l) => `${l.description} (${formatZAR(l.amountCents ?? 0)})`),
         }
       : null;
-
   return {
-    found: true,
     state,
     reference,
     doc,
     optionalLines,
     acceptance,
     declinedAt: q.declinedAt ? formatDateTimeSA(q.declinedAt) : null,
-    newerToken,
     business: {
       tradingName: wording.business.tradingName,
       phone: wording.business.phone,
       email: wording.business.email,
     },
   };
+}
+
+/** Finds a quote by its private code. Wrong, malformed, revoked and draft codes all give `{ found: false }`. */
+export async function getPublicQuote(
+  store: PublicStore,
+  token: string,
+  now: Date = new Date(),
+): Promise<PublicQuoteResult> {
+  if (!isLinkTokenShape(token)) return { found: false };
+  const q = await store.quote.findUnique({
+    where: { linkToken: token },
+    select: PUBLIC_QUOTE_SELECT,
+  });
+  if (!q) return { found: false };
+  const view = buildPublicView(q, todaySA(now));
+  if (!view) return { found: false };
+
+  let newerToken: string | null = null;
+  if (view.state === "REPLACED" && q.numberYear !== null && q.numberSeq !== null) {
+    const newer = await store.quote.findFirst({
+      where: {
+        numberYear: q.numberYear,
+        numberSeq: q.numberSeq,
+        revision: { gt: q.revision },
+        status: { in: ["ISSUED", "ACCEPTED"] },
+        linkToken: { not: null },
+      },
+      orderBy: { revision: "desc" },
+      select: { linkToken: true },
+    });
+    newerToken = newer?.linkToken ?? null;
+  }
+  return { found: true, ...view, newerToken };
 }
 
 /** Records that the link was opened: first view once, last view every time. Only for a live link. */
@@ -240,7 +237,7 @@ export type LinkDeclineInput = z.output<typeof linkDeclineSchema>;
 export type LinkContext = { ip: string | null; userAgent: string | null };
 
 export type LinkAcceptResult =
-  | { outcome: "ACCEPTED"; customerFlag: "PAUSED" | "ARCHIVED" | null }
+  | { outcome: "ACCEPTED"; customerFlag: "PAUSED" | "ARCHIVED" | null; quoteId: string }
   | { outcome: "ALREADY_ACCEPTED" }
   | { outcome: "EXPIRED" }
   | { outcome: "NOT_AVAILABLE" }
@@ -275,7 +272,7 @@ export async function acceptViaLink(
       found.id,
       input,
     );
-    return { outcome: "ACCEPTED", customerFlag };
+    return { outcome: "ACCEPTED", customerFlag, quoteId: found.id };
   } catch (error) {
     if (error instanceof LinkNoLongerValidError) return { outcome: "NOT_FOUND" };
     if (error instanceof QuoteExpiredError) return { outcome: "EXPIRED" };
@@ -333,9 +330,9 @@ export async function declineViaLink(
 }
 
 /**
- * Counts one request for this visitor (already hashed) in the current 10-minute window, with one atomic
- * statement, and says whether it is still within the limit. About one call in a hundred also deletes
- * windows older than a day (`opts.cleanup` forces or prevents this, for tests).
+ * Counts one request for this bucket (a hashed visitor address or a hashed email) in the current window of
+ * its kind, with one atomic statement, and says whether it is still within the limit. About one call in
+ * a hundred also deletes windows older than a day (`opts.cleanup` forces or prevents this, for tests).
  *
  * Call it in its own statement or transaction BEFORE the action transaction (accept or decline). If it
  * ran inside the action transaction, a refused attempt (an error that rolls the transaction back) would
@@ -344,12 +341,13 @@ export async function declineViaLink(
 export async function checkRateLimit(
   store: PublicStore,
   kind: RateKind,
-  ipHash: string,
+  hash: string,
   opts: { now?: Date; cleanup?: boolean } = {},
 ): Promise<{ allowed: boolean }> {
   const now = opts.now ?? new Date();
-  const bucket = rateBucket(kind, ipHash);
-  const windowStart = windowStartFor(now);
+  const bucket = rateBucket(kind, hash);
+  const rule = RATE_LIMITS[kind];
+  const windowStart = windowStartFor(now, rule.windowMinutes);
   const rows = await store.$queryRaw<{ count: number }[]>`
     insert into public_link_hits ("bucket", "windowStart", "count") values (${bucket}, ${windowStart}, 1)
     on conflict ("bucket", "windowStart") do update set "count" = public_link_hits."count" + 1
@@ -357,8 +355,9 @@ export async function checkRateLimit(
   const count = Number(rows[0]?.count ?? 1);
   if (opts.cleanup ?? Math.random() < 0.01) {
     await store.publicLinkHit.deleteMany({
-      where: { windowStart: { lt: new Date(now.getTime() - 24 * 60 * 60 * 1000) } },
+      // Two days, not one: the daily sign-in window is a day long, so it stays until well after it ends.
+      where: { windowStart: { lt: new Date(now.getTime() - 48 * 60 * 60 * 1000) } },
     });
   }
-  return { allowed: count <= (kind === "view" ? VIEW_LIMIT : ACT_LIMIT) };
+  return { allowed: count <= rule.limit };
 }

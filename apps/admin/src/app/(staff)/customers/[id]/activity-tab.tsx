@@ -17,6 +17,17 @@ const label: Record<string, string> = {
   "customer.property_archived": "Property archived",
   "customer.exported": "Data exported",
   "customer.anonymised": "Anonymised",
+  "customer.manager_set": "Linked to a managing agency",
+  "customer.manager_cleared": "Managing agency removed",
+  "customer.complex_added": "Complex linked to this agency",
+  "customer.complex_removed": "Complex unlinked from this agency",
+  "customer.bills_to_changed": "Billing recipient changed",
+  "customer.portal_invited": "Invited to the client portal",
+  "customer.portal_access_granted": "Given portal access after an acceptance",
+  "customer.portal_access_removed": "Portal access removed",
+  "customer.portal_welcomed": "Completed the portal welcome",
+  "portal.invite_sent": "Portal welcome email sent",
+  "portal.invite_failed": "Portal welcome email could not be sent",
 };
 
 function labelFor(e: { action: string; after: unknown }): string {

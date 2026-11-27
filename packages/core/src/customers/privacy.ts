@@ -1,3 +1,5 @@
+import { endPortalSignIns } from "../portal/end-sign-ins";
+import { HIERARCHY_MESSAGES } from "../portal/hierarchy";
 import { assertRole, DomainError, OWNER_ONLY, type Actor } from "./access";
 import { parseCustomerNumber } from "./number";
 import { lockCustomer, logCustomerEvent, type Store } from "./store";
@@ -27,6 +29,7 @@ export async function exportCustomerData(store: Store, actor: Actor, id: string)
 /**
  * Permanently removes a customer's personal details but keeps the record, its number and any
  * money amounts, so old invoices still add up. Owner only, cannot be undone.
+ * An agency that still manages complexes is refused; a complex loses its Managed by link; the contacts' portal sign-ins end.
  * Call it inside one transaction (`inTx`) so the updates succeed or fail together.
  *
  * Order matters. The customer row is what carries `anonymisedAt`, so it is written LAST: if
@@ -47,11 +50,36 @@ export async function anonymiseCustomer(
   if (parseCustomerNumber(confirmNumber) !== customer.number) {
     throw new DomainError("Type the customer number exactly as shown to confirm.");
   }
+  // An agency that still manages complexes cannot be anonymised. Checked before the lock (a refused request
+  // takes no lock) and again under it (linking a complex locks the agency too).
+  const stillManages = async () => (await store.customer.count({ where: { managedById: id } })) > 0;
+  if (await stillManages()) throw new DomainError(HIERARCHY_MESSAGES.agencyStillManages);
   await lockCustomer(store, id);
+  if (await stillManages()) throw new DomainError(HIERARCHY_MESSAGES.agencyStillManages);
+
+  // Portal sign-ins of this customer's contacts end now (unless that email still has access elsewhere).
+  const withEmail = await store.contact.findMany({
+    where: { customerId: id, email: { not: null } },
+    select: { id: true, email: true },
+  });
+  await endPortalSignIns(
+    store,
+    withEmail.flatMap((c) => (c.email ? [c.email] : [])),
+    withEmail.map((c) => c.id),
+  );
 
   await store.contact.updateMany({
     where: { customerId: id },
-    data: { name: "Anonymised contact", role: null, email: null, phone: null, portalAccess: false },
+    data: {
+      name: "Anonymised contact",
+      role: null,
+      email: null,
+      phone: null,
+      portalAccess: false,
+      portalInvitedAt: null,
+      portalWelcomedAt: null,
+      lastSignedInAt: null,
+    },
   });
   await store.property.updateMany({
     where: { customerId: id },
@@ -108,6 +136,8 @@ export async function anonymiseCustomer(
       consentAt: null,
       consentSource: null,
       consentNote: null,
+      managedById: null,
+      billsToManager: true,
       status: "ARCHIVED",
       statusBeforeArchive: null,
       archivedAt: customer.archivedAt ?? now,

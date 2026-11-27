@@ -40,7 +40,8 @@ export class LinkNoLongerValidError extends DomainError {
 
 export type AcceptContext = {
   audit: AuditParty;
-  method: "WHATSAPP" | "EMAIL" | "PHONE" | "IN_PERSON" | "SIGNED_COPY" | "CLIENT_LINK";
+  method:
+    "WHATSAPP" | "EMAIL" | "PHONE" | "IN_PERSON" | "SIGNED_COPY" | "CLIENT_LINK" | "CLIENT_PORTAL";
   /** The staff member who recorded it; null when the client accepted on the link. */
   staffId: string | null;
   ip: string | null;
@@ -50,6 +51,8 @@ export type AcceptContext = {
    * when the quote is read again under the locks, nothing is done. Staff callers leave it out.
    */
   expectLinkToken?: string | undefined;
+  /** Set by the client portal: the signed-in contact who accepted. Staff and the link leave it out. */
+  acceptedByContactId?: string | null | undefined;
 };
 
 /** A monthly agreement means a priced monthly line, or an optional monthly line the client chose. */
@@ -141,6 +144,7 @@ export async function acceptCore(
       acceptedByStaffId: ctx.staffId,
       acceptedIp: ctx.ip,
       acceptedUserAgent: ctx.userAgent,
+      acceptedByContactId: ctx.acceptedByContactId ?? null,
       // A freshly accepted quote starts as a live agreement.
       agreementEndedAt: null,
       agreementReplacedById: null,
@@ -202,7 +206,12 @@ export async function acceptCore(
 /** Declining: ISSUED only. Lock order customer, then quote. */
 export async function declineCore(
   store: AcceptStore,
-  ctx: { audit: AuditParty; declinedByClient: boolean; expectLinkToken?: string | undefined },
+  ctx: {
+    audit: AuditParty;
+    declinedByClient: boolean;
+    expectLinkToken?: string | undefined;
+    via?: "portal" | undefined;
+  },
   quoteId: string,
   input: { reason?: string | undefined },
 ): Promise<void> {
@@ -233,5 +242,11 @@ export async function declineCore(
     },
     select: { id: true },
   });
-  await logQuoteEventAs(store, ctx.audit, "quote.declined", quoteId);
+  await logQuoteEventAs(
+    store,
+    ctx.audit,
+    "quote.declined",
+    quoteId,
+    ctx.via ? { via: ctx.via } : undefined,
+  );
 }

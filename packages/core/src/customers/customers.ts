@@ -331,9 +331,16 @@ export async function listCustomerActivity(store: Store, actor: Actor, id: strin
     where: { entityType: "customer", entityId: id },
     orderBy: { at: "desc" },
     take: limit,
-    select: { id: true, at: true, action: true, actorId: true, after: true },
+    select: { id: true, at: true, action: true, actorType: true, actorId: true, after: true },
   });
-  const ids = [...new Set(entries.map((e) => e.actorId).filter((v): v is string => Boolean(v)))];
+  const ids = [
+    ...new Set(
+      entries
+        .filter((e) => e.actorType === "STAFF")
+        .map((e) => e.actorId)
+        .filter((v): v is string => Boolean(v)),
+    ),
+  ];
   const staff = await store.staffUser.findMany({
     where: { id: { in: ids } },
     select: { id: true, name: true },
@@ -341,7 +348,12 @@ export async function listCustomerActivity(store: Store, actor: Actor, id: strin
   const names = new Map(staff.map((s) => [s.id, s.name]));
   return entries.map((e) => ({
     ...e,
-    actorName: e.actorId ? (names.get(e.actorId) ?? "Staff") : "System",
+    actorName:
+      e.actorType === "CUSTOMER"
+        ? "Client"
+        : e.actorType === "STAFF" && e.actorId
+          ? (names.get(e.actorId) ?? "Staff")
+          : "System",
   }));
 }
 

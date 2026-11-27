@@ -6,7 +6,14 @@ import { DomainError, type Actor } from "./access";
 /** What the customer functions need. Works with the normal connection or a transaction. */
 export type Store = Pick<
   Db,
-  "customer" | "contact" | "property" | "auditLog" | "staffUser" | "quote"
+  | "customer"
+  | "contact"
+  | "property"
+  | "auditLog"
+  | "staffUser"
+  | "quote"
+  | "portalCode"
+  | "portalSession"
 >;
 
 /** Runs several writes as one all-or-nothing step. */

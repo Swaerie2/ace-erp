@@ -29,6 +29,8 @@ const CUSTOMER: Record<string, Rule> = {
   consentAt: "scrubbed",
   consentSource: "scrubbed",
   consentNote: "scrubbed",
+  managedById: "scrubbed",
+  billsToManager: "kept: yes/no setting, who bills go to",
   archivedAt: "kept: timestamp",
   anonymisedAt: "kept: timestamp, set by the scrub itself",
   createdById: "kept: staff id, not about the customer",
@@ -46,6 +48,9 @@ const CONTACT: Record<string, Rule> = {
   receivesQuotes: "kept: yes/no setting",
   receivesInvoices: "kept: yes/no setting",
   portalAccess: "scrubbed",
+  portalInvitedAt: "scrubbed",
+  portalWelcomedAt: "scrubbed",
+  lastSignedInAt: "scrubbed",
   createdAt: "kept: timestamp",
   updatedAt: "kept: timestamp",
 };
@@ -118,6 +123,7 @@ const QUOTE: Record<string, Rule> = {
   firstViewedAt: "kept: timestamp",
   lastViewedAt: "kept: timestamp",
   declinedByClient: "kept: yes/no, who declined",
+  acceptedByContactId: "kept: identifier (the contact row itself is scrubbed)",
 };
 
 const QUOTE_SCOPE_ITEM: Record<string, Rule> = {
@@ -143,6 +149,29 @@ const QUOTE_LINE: Record<string, Rule> = {
   chosen: "kept: yes/no, which add-on the client took",
 };
 
+// Sign-in rows are deleted outright (not scrubbed in place) when access is removed or the customer is
+// anonymised; "scrubbed" here means the email goes with the row.
+const PORTAL_CODE: Record<string, Rule> = {
+  id: "kept: identifier",
+  email: "scrubbed",
+  codeHash: "kept: one-way hash of a short-lived code, deleted with the row",
+  salt: "kept: random salt, not personal",
+  expiresAt: "kept: timestamp",
+  attempts: "kept: whole number",
+  usedAt: "kept: timestamp",
+  createdAt: "kept: timestamp",
+};
+
+const PORTAL_SESSION: Record<string, Rule> = {
+  id: "kept: identifier",
+  tokenHash: "kept: one-way hash of a random value, deleted with the row",
+  email: "scrubbed",
+  createdAt: "kept: timestamp",
+  lastSeenAt: "kept: timestamp",
+  expiresAt: "kept: timestamp",
+  absoluteExpiresAt: "kept: timestamp",
+};
+
 function check(name: string, columns: Record<string, string>, table: Record<string, Rule>) {
   describe(name, () => {
     const actual = Object.values(columns).sort();
@@ -164,4 +193,6 @@ describe("personal data coverage", () => {
   check("quotes", Prisma.QuoteScalarFieldEnum, QUOTE);
   check("quote scope items", Prisma.QuoteScopeItemScalarFieldEnum, QUOTE_SCOPE_ITEM);
   check("quote lines", Prisma.QuoteLineScalarFieldEnum, QUOTE_LINE);
+  check("portal codes", Prisma.PortalCodeScalarFieldEnum, PORTAL_CODE);
+  check("portal sessions", Prisma.PortalSessionScalarFieldEnum, PORTAL_SESSION);
 });

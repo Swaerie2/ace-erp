@@ -2,10 +2,12 @@ import {
   formatCustomerNumber,
   getCustomer,
   getCustomerForCrew,
+  getCustomerHierarchy,
   getDb,
   getPropertyAgreement,
   listCustomerActivity,
   listQuotes,
+  searchAgencies,
 } from "@ace/core";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -22,7 +24,14 @@ import { PropertiesTab } from "./properties-tab";
 import { QuotesTab } from "./quotes-tab";
 
 type Param = string | string[] | undefined;
-type Search = { tab?: Param; edit?: Param; add?: Param; error?: Param };
+type Search = {
+  tab?: Param;
+  edit?: Param;
+  add?: Param;
+  error?: Param;
+  agencyQ?: Param;
+  link?: Param;
+};
 const TABS = ["overview", "contacts", "properties", "quotes", "activity"] as const;
 type Tab = (typeof TABS)[number];
 
@@ -53,6 +62,8 @@ export default async function CustomerPage({
   const edit = first(sp.edit);
   const add = first(sp.add);
   const notice = first(sp.error);
+  const agencyQuery = (first(sp.agencyQ) ?? "").slice(0, 80);
+  const linkNotice = first(sp.link);
 
   return (
     <div>
@@ -103,6 +114,14 @@ export default async function CustomerPage({
             customer={customer}
             editing={edit === "1"}
             isOwner={staff.role === "OWNER"}
+            hierarchy={await getCustomerHierarchy(getDb(), actor, id)}
+            agencyQuery={agencyQuery}
+            agencyResults={
+              agencyQuery
+                ? await searchAgencies(getDb(), actor, { q: agencyQuery, excludeId: id })
+                : []
+            }
+            linkNotice={linkNotice}
           />
         ) : tab === "contacts" ? (
           <ContactsTab customer={customer} edit={edit} add={add === "1"} notice={notice} />

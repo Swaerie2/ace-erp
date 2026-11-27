@@ -1,9 +1,15 @@
-import { formatCustomerNumber, type getCustomer } from "@ace/core";
+import {
+  formatCustomerNumber,
+  type AgencyOption,
+  type CustomerHierarchy,
+  type getCustomer,
+} from "@ace/core";
 import Link from "next/link";
 import { secondaryButtonClass } from "@/components/form";
 import { formatDate } from "@/lib/format";
 import { archiveCustomerAction, restoreCustomerAction } from "../actions";
 import { EditCustomerForm } from "./edit-customer-form";
+import { HierarchyPanel } from "./hierarchy-panel";
 import { OwnerTools } from "./owner-tools";
 
 type Customer = NonNullable<Awaited<ReturnType<typeof getCustomer>>>;
@@ -48,10 +54,18 @@ export function OverviewTab({
   customer: c,
   editing,
   isOwner,
+  hierarchy,
+  agencyQuery,
+  agencyResults,
+  linkNotice,
 }: {
   customer: Customer;
   editing: boolean;
   isOwner: boolean;
+  hierarchy: CustomerHierarchy;
+  agencyQuery: string;
+  agencyResults: AgencyOption[];
+  linkNotice: string | undefined;
 }) {
   if (editing && !c.anonymisedAt)
     return (
@@ -97,6 +111,15 @@ export function OverviewTab({
           }
         />
       </dl>
+
+      <HierarchyPanel
+        customerId={c.id}
+        locked={Boolean(c.anonymisedAt)}
+        hierarchy={hierarchy}
+        agencyQuery={agencyQuery}
+        agencyResults={agencyResults}
+        notice={linkNotice}
+      />
 
       {c.anonymisedAt ? (
         <p className="text-sm text-charcoal/60">

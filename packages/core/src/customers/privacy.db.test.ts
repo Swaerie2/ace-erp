@@ -127,7 +127,6 @@ async function makeFull(tx: Tx) {
       role: v.contactRole,
       email: v.contactEmail,
       phone: v.phoneA.typed,
-      portalAccess: "on",
     }),
     property: propertySchema.parse({
       label: v.label,
@@ -141,6 +140,13 @@ async function makeFull(tx: Tx) {
       terrainNotes: v.terrainNotes,
     }),
   });
+  // Portal access is no longer part of the contact form: switch it on directly, so the anonymise test
+  // proves that anonymising switches it off again.
+  const granted = await tx.contact.updateMany({
+    where: { customerId: id, email: v.contactEmail },
+    data: { portalAccess: true, portalInvitedAt: new Date() },
+  });
+  if (granted.count !== 1) throw new Error("Expected the main contact to get portal access.");
   await addContact(
     tx,
     owner,

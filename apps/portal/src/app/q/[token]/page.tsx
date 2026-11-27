@@ -3,10 +3,12 @@ import { QuoteDocumentView } from "@ace/ui/quote-document";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { BarePage, Contact, Notice, PageShell, TooManyRequests } from "@/components/notices";
+import { AcceptForm } from "@/components/quote-forms/accept-form";
+import { DeclineForm } from "@/components/quote-forms/decline-form";
+import { AcceptedNotice, PdfLink } from "@/components/quote-outcome";
 import { getVisitor } from "@/lib/visitor";
-import { AcceptForm } from "./accept-form";
-import { DeclineForm } from "./decline-form";
-import { BarePage, Contact, Notice, PageShell, TooManyRequests } from "./notices";
+import { acceptAction, declineAction } from "./actions";
 
 // Titles and descriptions never hold customer details.
 export const metadata: Metadata = {
@@ -16,9 +18,6 @@ export const metadata: Metadata = {
 };
 
 export const dynamic = "force-dynamic";
-
-const pdfLinkClass =
-  "inline-flex min-h-11 items-center text-sm font-semibold text-forest underline";
 
 export default async function QuoteLinkPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -71,25 +70,7 @@ export default async function QuoteLinkPage({ params }: { params: Promise<{ toke
     case "ACCEPTED":
       return (
         <PageShell>
-          <Notice title="Thank you, this quotation has been accepted" tone="good">
-            {quote.acceptance?.name ? <p>Accepted by {quote.acceptance.name}.</p> : null}
-            {quote.acceptance?.at ? <p>Accepted on {quote.acceptance.at}.</p> : null}
-            {quote.acceptance?.startDate ? (
-              <p>Service starts on {quote.acceptance.startDate}.</p>
-            ) : null}
-            <p>
-              Optional add-ons chosen:{" "}
-              {quote.acceptance && quote.acceptance.chosen.length > 0
-                ? quote.acceptance.chosen.join(", ")
-                : "none"}
-              .
-            </p>
-            <p className="pt-1">
-              <a href={pdfHref} className={pdfLinkClass}>
-                Download a PDF copy
-              </a>
-            </p>
-          </Notice>
+          <AcceptedNotice acceptance={quote.acceptance} pdfHref={pdfHref} />
           <QuoteDocumentView doc={quote.doc} />
         </PageShell>
       );
@@ -108,17 +89,15 @@ export default async function QuoteLinkPage({ params }: { params: Promise<{ toke
         <PageShell>
           <QuoteDocumentView doc={quote.doc} />
           <p>
-            <a href={pdfHref} className={pdfLinkClass}>
-              Download a PDF copy
-            </a>
+            <PdfLink href={pdfHref} />
           </p>
           <AcceptForm
-            token={token}
+            action={acceptAction.bind(null, token)}
             reference={quote.reference}
             optionalLines={quote.optionalLines}
             today={todaySA()}
           />
-          <DeclineForm token={token} />
+          <DeclineForm action={declineAction.bind(null, token)} />
         </PageShell>
       );
   }

@@ -17,7 +17,6 @@ export type ContactRow = {
   phone: string | null;
   receivesQuotes: boolean;
   receivesInvoices: boolean;
-  portalAccess: boolean;
 };
 
 function toValues(c?: ContactRow): Record<string, string> {
@@ -28,7 +27,6 @@ function toValues(c?: ContactRow): Record<string, string> {
   if (c.phone) v.phone = c.phone;
   if (c.receivesQuotes) v.receivesQuotes = "on";
   if (c.receivesInvoices) v.receivesInvoices = "on";
-  if (c.portalAccess) v.portalAccess = "on";
   return v;
 }
 

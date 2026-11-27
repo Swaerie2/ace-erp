@@ -205,6 +205,14 @@ export async function getQuote(store: QuoteStore, actor: Actor, id: string) {
           archivedAt: true,
         },
       },
+      acceptedByContact: {
+        select: {
+          id: true,
+          name: true,
+          customerId: true,
+          customer: { select: { id: true, displayName: true } },
+        },
+      },
     },
   });
 }

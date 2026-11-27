@@ -31,6 +31,7 @@ import { z } from "zod";
 import { toActor } from "@/lib/actor";
 import { requireStaff } from "@/lib/auth";
 import { errorsFrom, failure, formValues, type FormState } from "@/lib/form";
+import { grantPortalAccessLater } from "@/lib/portal-access";
 
 const idSchema = z.uuid();
 
@@ -231,6 +232,8 @@ export async function acceptQuoteAction(_prev: FormState, formData: FormData): P
   } catch (error) {
     return failure(error, values);
   }
+  // The acceptance has committed: portal access and the welcome emails follow after the response.
+  grantPortalAccessLater(id.data);
   redirect(flag ? `/quotes/${id.data}?notice=${flag.toLowerCase()}` : `/quotes/${id.data}`);
 }
 

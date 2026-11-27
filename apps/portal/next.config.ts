@@ -16,6 +16,12 @@ const privateLinkHeaders = [
   { key: "Referrer-Policy", value: "no-referrer" },
 ];
 
+// Signed-in pages and the sign-in pages: never cached, never indexed. Static assets are not matched.
+const signedInHeaders = [
+  { key: "Cache-Control", value: "private, no-store" },
+  { key: "X-Robots-Tag", value: "noindex, nofollow" },
+];
+
 const nextConfig: NextConfig = {
   transpilePackages: ["@ace/core", "@ace/ui"],
   serverExternalPackages: ["@react-pdf/renderer"],
@@ -23,7 +29,12 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       { source: "/(.*)", headers: securityHeaders },
-      // Listed second: when two rules set the same header, the later one wins (Referrer-Policy).
+      { source: "/", headers: signedInHeaders },
+      { source: "/welcome", headers: signedInHeaders },
+      { source: "/sign-in", headers: signedInHeaders },
+      { source: "/sign-in/:path*", headers: signedInHeaders },
+      { source: "/quotes/:path*", headers: signedInHeaders },
+      // Listed last: when two rules set the same header, the later one wins (Referrer-Policy).
       { source: "/q/:path*", headers: privateLinkHeaders },
     ];
   },

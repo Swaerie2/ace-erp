@@ -2,11 +2,12 @@
 
 import { useFocusOnFeedback } from "@ace/ui/use-focus-on-feedback";
 import { useActionState, useRef } from "react";
-import { declineAction } from "./actions";
-import { fieldClass } from "./form-classes";
+import { fieldClass } from "@/components/form-classes";
+import type { FormAction } from "./accept-form";
 
-export function DeclineForm({ token }: { token: string }) {
-  const [state, action, pending] = useActionState(declineAction.bind(null, token), undefined);
+/** The decline form, shared by the private link page and the portal quote page. */
+export function DeclineForm({ action: submit }: { action: FormAction }) {
+  const [state, action, pending] = useActionState(submit, undefined);
   const formRef = useRef<HTMLFormElement>(null);
   useFocusOnFeedback(formRef, state?.nonce);
   return (

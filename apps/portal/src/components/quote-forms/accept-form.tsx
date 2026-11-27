@@ -2,19 +2,23 @@
 
 import { useFocusOnFeedback } from "@ace/ui/use-focus-on-feedback";
 import { useActionState, useRef } from "react";
-import { acceptAction } from "./actions";
-import { fieldClass, primaryButtonClass } from "./form-classes";
+import { fieldClass, primaryButtonClass } from "@/components/form-classes";
+import type { FormState } from "@/lib/form-state";
+
+/** A server action already bound to its quote (by link code or by id). */
+export type FormAction = (prev: FormState, formData: FormData) => Promise<FormState>;
 
 type Props = {
-  token: string;
+  action: FormAction;
   reference: string;
   optionalLines: { id: string; label: string }[];
   /** Today in South African time, as YYYY-MM-DD: the earliest start date. */
   today: string;
 };
 
-export function AcceptForm({ token, reference, optionalLines, today }: Props) {
-  const [state, action, pending] = useActionState(acceptAction.bind(null, token), undefined);
+/** The accept form, shared by the private link page and the portal quote page. */
+export function AcceptForm({ action: submit, reference, optionalLines, today }: Props) {
+  const [state, action, pending] = useActionState(submit, undefined);
   const formRef = useRef<HTMLFormElement>(null);
   useFocusOnFeedback(formRef, state?.nonce);
   const e = state?.fieldErrors ?? {};

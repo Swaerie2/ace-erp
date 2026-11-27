@@ -169,7 +169,7 @@ describe.skipIf(!dbTestsEnabled)("accepting and declining on the link", () => {
         { acceptedBy: "A. Client", startDate: start(), chosenLineIds: [optionId] },
         ctx,
       );
-      expect(result).toEqual({ outcome: "ACCEPTED", customerFlag: null });
+      expect(result).toEqual({ outcome: "ACCEPTED", customerFlag: null, quoteId: id });
       const after = await findQuote(tx, id);
       expect(after).toMatchObject({
         status: "ACCEPTED",
@@ -262,7 +262,7 @@ describe.skipIf(!dbTestsEnabled)("accepting and declining on the link", () => {
         { acceptedBy: "A", startDate: start(), chosenLineIds: [] },
         ctx,
       );
-      expect(result).toEqual({ outcome: "ACCEPTED", customerFlag: "PAUSED" });
+      expect(result).toEqual({ outcome: "ACCEPTED", customerFlag: "PAUSED", quoteId: q.id });
       expect((await tx.customer.findUniqueOrThrow({ where: { id: q.customerId } })).status).toBe(
         "PAUSED",
       );
@@ -350,7 +350,28 @@ describe.skipIf(!dbTestsEnabled)("the rate limiter", () => {
     });
   });
 
-  it("clears windows older than a day when it cleans up, and never stores the address", async () => {
+  it("keeps a rate-limit window for two days before cleaning it up", async () => {
+    await withRollback(async (tx) => {
+      const hashed = hashIp("198.51.100.78");
+      const bucket = `code-email-day:${hashed}`;
+      const at = (iso: string) => new Date(iso);
+      // A day window opened at the start of 23 Nov and one at the start of 21 Nov.
+      await checkRateLimit(tx, "code-email-day", hashed, { now: at("2026-11-23T10:00:00Z") });
+      await checkRateLimit(tx, "code-email-day", hashed, { now: at("2026-11-21T10:00:00Z") });
+      // Cleaning up late on 24 Nov (the 23 Nov window began 24h+ ago) must keep it; 21 Nov goes.
+      await checkRateLimit(tx, "view", hashed, {
+        now: at("2026-11-24T23:00:00Z"),
+        cleanup: true,
+      });
+      const rows = await tx.publicLinkHit.findMany({
+        where: { bucket },
+        select: { windowStart: true },
+      });
+      expect(rows.map((r) => r.windowStart.toISOString())).toEqual(["2026-11-23T00:00:00.000Z"]);
+    });
+  });
+
+  it("clears windows older than two days when it cleans up, and never stores the address", async () => {
     await withRollback(async (tx) => {
       const ip = "198.51.100.77";
       const hashed = hashIp(ip);
