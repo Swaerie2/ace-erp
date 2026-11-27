@@ -88,7 +88,7 @@ function pageNotice(sp: Search): NoticeText | null {
       text:
         `Issued ${plural(n(sp.issued), "invoice")}. The emails go out in the background.` +
         (failed > 0
-          ? ` ${failed} could not be issued and ${failed === 1 ? "is" : "are"} still in the list above. Open one to see why.`
+          ? ` ${failed} could not be issued and ${failed === 1 ? "is" : "are"} still in the drafts list below. Open one to see why.`
           : "") +
         (remaining > 0
           ? ` ${plural(remaining, "draft")} remain: press "Issue all" again to issue the next ${Math.min(ISSUE_BATCH, remaining)}.`
