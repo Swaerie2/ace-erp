@@ -1,7 +1,7 @@
 // ACE Garden Services: core database schema.
 //
-// Modules 0 to 4: organisation settings, staff users, audit log, customers, contacts, properties,
-// services, quotes, client link, client portal. Invoices arrive in Module 5, and so on.
+// Modules 0 to 5a: organisation settings, staff users, audit log, customers, contacts, properties,
+// services, quotes, client link, client portal, invoices, payments. Jobs arrive in Module 6, and so on.
 //
 // Rules for every future model:
 //   * Money is stored as whole cents (Int), never floats.
@@ -111,6 +111,13 @@ enum ServiceFrequency {
   ONCE_OFF
 }
 
+/// Module 5: when a monthly client is billed. PRE: the run in month M bills service month M+1, due the last
+/// day of M. POST: the run in month M bills service month M, due the 25th of M.
+enum BillingTiming {
+  PRE
+  POST
+}
+
 /// The account quotes and invoices go to. Archived, never deleted.
 model Customer {
   id                  String          @id @default(uuid()) @db.Uuid
@@ -140,6 +147,8 @@ model Customer {
   managedById         String?         @db.Uuid
   /// Module 4: while managed, true = bills go to the agency, false = to the complex itself.
   billsToManager      Boolean         @default(true)
+  /// Module 5: Pre or Post billing for the monthly run. Default Pre for every customer.
+  billingTiming       BillingTiming   @default(PRE)
   archivedAt          DateTime?
   anonymisedAt        DateTime?
   createdById         String?
@@ -152,6 +161,10 @@ model Customer {
 
   managedBy        Customer?  @relation("CustomerManagement", fields: [managedById], references: [id], onDelete: Restrict)
   managedCustomers Customer[] @relation("CustomerManagement")
+
+  invoices       Invoice[] @relation("InvoiceCustomer")
+  billedInvoices Invoice[] @relation("InvoiceBillTo")
+  payments       Payment[]
 
   @@index([displayName])
   @@index([status])
@@ -185,6 +198,7 @@ model Contact {
   customer Customer @relation(fields: [customerId], references: [id])
 
   acceptedQuotes Quote[] @relation("QuoteAcceptedByContact")
+  paymentReports PaymentReport[]
 
   @@index([customerId])
   @@index([email])
@@ -217,6 +231,8 @@ model Property {
 
   customer Customer @relation(fields: [customerId], references: [id])
   quotes   Quote[]
+
+  invoiceLines InvoiceLine[]
 
   @@index([customerId])
   @@map("properties")
@@ -382,6 +398,7 @@ model Quote {
   lines      QuoteLine[]
 
   acceptedByContact Contact? @relation("QuoteAcceptedByContact", fields: [acceptedByContactId], references: [id], onDelete: SetNull)
+  invoices          Invoice[]
 
   @@unique([numberYear, numberSeq, revision])
   @@index([customerId])
@@ -427,6 +444,8 @@ model QuoteLine {
   chosen      Boolean         @default(false)
 
   quote Quote @relation(fields: [quoteId], references: [id])
+
+  invoiceLines InvoiceLine[]
 
   @@index([quoteId])
   @@map("quote_lines")
@@ -484,4 +503,198 @@ model PortalSession {
 
   @@index([email])
   @@map("portal_sessions")
+}
+
+enum InvoiceKind {
+  MONTHLY
+  ONCE_OFF
+}
+
+/// Only these three are stored. Unpaid, part paid, paid and overdue are worked out from the balance.
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  VOID
+}
+
+enum InvoiceLineKind {
+  SERVICE
+  OPTIONAL
+  LATE_FEE
+  ADJUSTMENT
+  ONCE_OFF
+}
+
+enum InvoiceEmailStatus {
+  NONE
+  SENT
+  FAILED
+}
+
+enum PaymentReportStatus {
+  WAITING
+  CONFIRMED
+  DISMISSED
+}
+
+/// Module 5: exactly one row (id = "singleton"), edited by the owner. Issued invoices keep their own frozen
+/// copy of the bank details (Invoice.bankSnapshot). Bank details start empty: issuing is refused until set.
+model InvoiceSettings {
+  id             String   @id @default("singleton")
+  bankName       String   @default("")
+  accountHolder  String   @default("")
+  accountNumber  String   @default("")
+  branchCode     String   @default("")
+  accountType    String   @default("")
+  /// Once-off invoices: due this many days after the issue date unless staff set a due date.
+  onceOffDueDays Int      @default(14)
+  /// The suggested late payment fee in whole cents (0 = no suggestion).
+  lateFeeCents   Int      @default(10000)
+  updatedAt      DateTime @updatedAt
+  updatedById    String?
+
+  @@map("invoice_settings")
+}
+
+/// Module 5: the last invoice number given out in each year (South African year). Taken with one atomic statement.
+model InvoiceCounter {
+  year    Int @id
+  lastSeq Int
+
+  @@map("invoice_counters")
+}
+
+/// Module 5: one invoice. `customerId` is the client the work is for, `billToCustomerId` the payer (the agency
+/// when the complex's bills go to it). Drafts have no number; issuing freezes the recipient, bank details and total.
+model Invoice {
+  id               String             @id @default(uuid()) @db.Uuid
+  customerId       String             @db.Uuid
+  billToCustomerId String             @db.Uuid
+  kind             InvoiceKind
+  /// First day of the month the service is for. Monthly invoices only.
+  serviceMonth     DateTime?          @db.Date
+  status           InvoiceStatus      @default(DRAFT)
+  /// INV-<numberYear>-<numberSeq>, null while a draft.
+  numberYear       Int?
+  numberSeq        Int?
+  dueDate          DateTime?          @db.Date
+  issuedAt         DateTime?
+  issuedById       String?
+  createdAt        DateTime           @default(now())
+  createdById      String?
+  /// Raised on every draft save; guards against two devices editing one draft.
+  draftVersion     Int                @default(1)
+  sourceQuoteId    String?            @db.Uuid
+  /// Set at issue: the sum of the line amounts.
+  totalCents       Int?
+  /// Frozen at issue. Personal data: scrubbed on anonymise.
+  recipientName    String?
+  recipientAddress String?
+  /// Frozen at issue: { bank, business, paymentReference }. ACE's own details only.
+  bankSnapshot     Json?
+  /// SHA-256 of the canonical content at issue.
+  contentHash      String?
+  emailStatus      InvoiceEmailStatus @default(NONE)
+  emailedAt        DateTime?
+  voidedAt         DateTime?
+  /// Typed by staff. Scrubbed on anonymise.
+  voidReason       String?
+  voidedById       String?
+
+  customer     Customer            @relation("InvoiceCustomer", fields: [customerId], references: [id], onDelete: Restrict)
+  billTo       Customer            @relation("InvoiceBillTo", fields: [billToCustomerId], references: [id], onDelete: Restrict)
+  sourceQuote  Quote?              @relation(fields: [sourceQuoteId], references: [id], onDelete: SetNull)
+  lines        InvoiceLine[]       @relation("InvoiceLines")
+  lateFeeLines InvoiceLine[]       @relation("LateFeeFor")
+  allocations  PaymentAllocation[]
+  reports      PaymentReport[]
+
+  @@unique([numberYear, numberSeq])
+  @@index([customerId])
+  @@index([billToCustomerId])
+  @@index([status])
+  @@map("invoices")
+}
+
+/// Module 5: one line of an invoice. Amounts are whole cents and never zero; only ADJUSTMENT may be negative.
+model InvoiceLine {
+  id                String          @id @default(uuid()) @db.Uuid
+  invoiceId         String          @db.Uuid
+  sortOrder         Int
+  propertyId        String?         @db.Uuid
+  kind              InvoiceLineKind
+  /// Replaced by a fixed word per kind on anonymise (run lines carry the property label).
+  description       String
+  amountCents       Int
+  sourceQuoteLineId String?         @db.Uuid
+  /// LATE_FEE lines: the overdue invoice the fee is charged against.
+  forInvoiceId      String?         @db.Uuid
+
+  invoice         Invoice    @relation("InvoiceLines", fields: [invoiceId], references: [id], onDelete: Restrict)
+  property        Property?  @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  sourceQuoteLine QuoteLine? @relation(fields: [sourceQuoteLineId], references: [id], onDelete: SetNull)
+  forInvoice      Invoice?   @relation("LateFeeFor", fields: [forInvoiceId], references: [id], onDelete: Restrict)
+
+  @@index([invoiceId])
+  @@index([forInvoiceId])
+  @@map("invoice_lines")
+}
+
+/// Module 5: money received by EFT. A voided payment keeps its allocation rows as history; they stop counting.
+model Payment {
+  id              String    @id @default(uuid()) @db.Uuid
+  payerCustomerId String    @db.Uuid
+  receivedOn      DateTime  @db.Date
+  amountCents     Int
+  /// The bank reference as typed by staff. Scrubbed on anonymise.
+  reference       String?
+  /// Scrubbed on anonymise.
+  note            String?
+  recordedById    String
+  createdAt       DateTime  @default(now())
+  voidedAt        DateTime?
+  voidReason      String?
+  voidedById      String?
+
+  payer       Customer            @relation(fields: [payerCustomerId], references: [id], onDelete: Restrict)
+  allocations PaymentAllocation[]
+
+  @@index([payerCustomerId])
+  @@map("payments")
+}
+
+/// Module 5: part (or all) of a payment applied to one invoice.
+model PaymentAllocation {
+  id          String @id @default(uuid()) @db.Uuid
+  paymentId   String @db.Uuid
+  invoiceId   String @db.Uuid
+  amountCents Int
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@unique([paymentId, invoiceId])
+  @@index([invoiceId])
+  @@map("payment_allocations")
+}
+
+/// Module 5: a client's "I have paid" (written by the portal in stage 5b; staff confirm or dismiss).
+model PaymentReport {
+  id                  String              @id @default(uuid()) @db.Uuid
+  invoiceId           String              @db.Uuid
+  reportedByContactId String?             @db.Uuid
+  paidOn              DateTime            @db.Date
+  /// The client's bank reference as typed. Personal data: scrubbed on anonymise.
+  reference           String?
+  status              PaymentReportStatus @default(WAITING)
+  createdAt           DateTime            @default(now())
+  resolvedAt          DateTime?
+  resolvedById        String?
+
+  invoice           Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  reportedByContact Contact? @relation(fields: [reportedByContactId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+  @@index([status])
+  @@map("payment_reports")
 }
