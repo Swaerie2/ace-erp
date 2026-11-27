@@ -22,7 +22,9 @@ const CONTROL_ANY = /[\u0000-\u001f\u007f]/;
 /** Notes keep line breaks (browsers post them as CR LF) but no other control characters. */
 const CONTROL_EXCEPT_NEWLINE = /[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f]/;
 export const SPECIAL_CHARACTERS = "Remove the special characters.";
-const plainText = (v: string) => !CONTROL_ANY.test(v);
+/** True when single-line text has no control characters. Shared with the company address form. */
+export const isPlainText = (v: string) => !CONTROL_ANY.test(v);
+const plainText = isPlainText;
 const LIMIT_WORDS = "R1 000 000";
 const TOO_MANY_LINES = `Keep the invoice to ${MAX_INVOICE_LINES} lines or fewer.`;
 
@@ -101,6 +103,8 @@ export const invoiceSnapshotSchema = z.object({
     phone: z.string(),
     email: z.string(),
     website: z.string(),
+    /** The company address as one line. Absent on invoices issued before it existed, and when it is blank. */
+    address: z.string().nullish(),
   }),
   paymentReference: z.string(),
 });
