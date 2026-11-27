@@ -62,3 +62,4 @@ export {
   type InvoiceDocumentInput,
   type StatementDocument,
 } from "./document";
+export { checkInvoiceEmailable, emailIssuedInvoices, type InvoiceEmailDeps } from "./emails";
