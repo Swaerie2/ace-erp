@@ -49,6 +49,11 @@ export default async function StaffLayout({ children }: { children: React.ReactN
                 Invoice settings
               </Link>
             ) : null}
+            {staff.role === "OWNER" ? (
+              <Link href="/settings/company" className="text-charcoal/80 hover:text-forest">
+                Company profile
+              </Link>
+            ) : null}
           </nav>
           <div className="flex items-center gap-3 text-sm">
             <span className="hidden text-charcoal/60 sm:inline">
