@@ -79,7 +79,7 @@ export default async function PaymentPage({
           </h1>
           {voided ? (
             <span className="rounded-full bg-charcoal/10 px-2.5 py-1 text-xs font-semibold text-charcoal/50">
-              Void
+              Voided
             </span>
           ) : null}
         </div>
