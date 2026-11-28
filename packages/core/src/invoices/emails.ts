@@ -192,7 +192,9 @@ export async function emailIssuedInvoices(
       }
     } catch {
       console.error("Invoice emails could not be prepared.");
-      for (const r of group) if (!outcomes.has(r.id)) fail([r], "send");
+      // Nothing was sent here (the contacts could not be read): a problem putting the email together.
+      // Nothing was sent here (the contacts could not be read): a problem putting the email together.
+      for (const r of group) if (!outcomes.has(r.id)) fail([r], "prepare");
     }
   }
 

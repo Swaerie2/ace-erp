@@ -135,6 +135,29 @@ describe("emailIssuedInvoices", () => {
     expect(logged).not.toContain("example.com");
   });
 
+  it("records 'prepare' (not 'send') when the payer's contacts cannot be read", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { store, audits } = fakeStore({
+      invoices: [invoice("i1", 1, "c", "c")],
+      emails: { c: ["zz.x@example.com"] },
+    });
+    store.contact.findMany = (async () => {
+      throw new Error("connection lost for zz.x@example.com");
+    }) as unknown as typeof store.contact.findMany;
+    const send = vi.fn();
+    const result = await emailIssuedInvoices(store, manager, ["i1"], { send, attachmentFor: pdf });
+    expect(result).toEqual({ sent: 0, failed: 1 });
+    expect(send).not.toHaveBeenCalled();
+    expect(audits[0]).toEqual({
+      action: "invoice.email_failed",
+      entityId: "i1",
+      after: { reason: "prepare" },
+    });
+    const logged = error.mock.calls.map((c) => c.map(String).join(" ")).join("\n");
+    expect(logged).toContain("Invoice emails could not be prepared.");
+    expect(logged).not.toContain("example.com");
+  });
+
   it("marks the invoice failed when its PDF cannot be made", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const { store, audits } = fakeStore({
