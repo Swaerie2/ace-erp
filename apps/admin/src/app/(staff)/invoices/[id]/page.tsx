@@ -171,7 +171,7 @@ export default async function InvoicePage({
                 ACE&apos;s bank details are not entered yet, so this cannot be issued.
               </p>
             ) : null}
-            <IssueForm id={inv.id} disabled={!settings.bankReady} />
+            <IssueForm id={inv.id} version={inv.draftVersion} disabled={!settings.bankReady} />
           </Section>
         </>
       ) : null}

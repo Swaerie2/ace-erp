@@ -19,6 +19,7 @@ import {
   allocatedByInvoice,
   billToIdFor,
   INVOICE_MESSAGES,
+  InvoiceDraftConflictError,
   InvoiceIssueError,
   lockCustomersInOrder,
   lockInvoiceRows,
@@ -51,6 +52,7 @@ const ISSUE_SELECT = {
   id: true,
   status: true,
   kind: true,
+  draftVersion: true,
   customerId: true,
   serviceMonth: true,
   dueDate: true,
@@ -87,11 +89,14 @@ const BILL_TO_SELECT = {
  * Lock order: the work customer and the bill-to customer (smaller id first), then the invoice. Refuses (with
  * plain sentences in an InvoiceIssueError) an archived or anonymised customer or bill-to, missing bank details,
  * and any problem `issueProblems` finds. Emails are NOT sent here: the app sends them after the commit.
+ * `expectedVersion` (optional) is the draft version the issuer saw: when the draft has been saved since, it is
+ * refused with an InvoiceDraftConflictError instead of numbering content nobody checked.
  */
 export async function issueInvoice(
   store: InvoiceStore,
   actor: Actor,
   id: string,
+  options: { expectedVersion?: number | undefined } = {},
 ): Promise<{ id: string; reference: string }> {
   assertRole(actor, MANAGEMENT);
   if (!isUuid(id)) throw new DomainError(INVOICE_MESSAGES.notFound);
@@ -125,6 +130,9 @@ export async function issueInvoice(
   await lockCustomersInOrder(store, [first.customerId, billToId]);
   await lockInvoiceRows(store, [id]);
   const inv = await read();
+  if (options.expectedVersion !== undefined && inv.draftVersion !== options.expectedVersion) {
+    throw new InvoiceDraftConflictError(INVOICE_MESSAGES.issueConflict);
+  }
   if (billToIdFor(inv.customer) !== billToId) {
     throw new DomainError(INVOICE_MESSAGES.billingChanged);
   }
@@ -193,14 +201,23 @@ export type IssueAllResult = {
 
 /**
  * "Issue all drafts": every draft (oldest first), each in its own transaction so one failure never blocks the
- * rest. `only` limits it to these invoice ids; ids that are not UUIDs are ignored. Emails are not sent here.
+ * rest. `only` limits it to these invoice ids; ids that are not UUIDs are ignored. `expectedVersions` (invoice
+ * id to the draft version the person saw) refuses a draft saved since then; it counts as failed and the rest
+ * carry on. Emails are not sent here.
  */
 export async function issueAllDrafts(
   store: InvoiceStore,
   actor: Actor,
-  deps: { run: TxRunner; only?: readonly string[] },
+  deps: {
+    run: TxRunner;
+    only?: readonly string[];
+    expectedVersions?: Readonly<Record<string, number>>;
+  },
 ): Promise<IssueAllResult> {
   assertRole(actor, MANAGEMENT);
+  const versions = new Map(
+    Object.entries(deps.expectedVersions ?? {}).map(([k, v]) => [k.toLowerCase(), v] as const),
+  );
   const only = deps.only
     ? [...new Set(deps.only.filter(isUuid).map((v) => v.toLowerCase()))]
     : null;
@@ -212,7 +229,10 @@ export async function issueAllDrafts(
   const result: IssueAllResult = { issued: [], failed: [] };
   for (const d of drafts) {
     try {
-      result.issued.push(await deps.run((tx) => issueInvoice(tx, actor, d.id)));
+      const expectedVersion = versions.get(d.id.toLowerCase());
+      result.issued.push(
+        await deps.run((tx) => issueInvoice(tx, actor, d.id, { expectedVersion })),
+      );
     } catch (error) {
       // Unreachable today (the role is checked above); a ForbiddenError stops the whole batch.
       if (error instanceof ForbiddenError) throw error;

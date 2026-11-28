@@ -33,6 +33,8 @@ import { failure, formValues, type FormState } from "@/lib/form";
 import { emailInvoicesLater } from "@/lib/invoice-email";
 
 const idSchema = z.uuid();
+/** A draft version posted back by a form (whole number, 1 or more). */
+const versionSchema = z.coerce.number().int().min(1).max(2_147_483_647);
 const BAD_REQUEST = "Something went wrong. Refresh the page and try again.";
 /** The most drafts one press of "Issue all" works through, so a request cannot run past its time limit. */
 const ISSUE_BATCH = 50;
@@ -105,12 +107,23 @@ export async function issueAllAction(formData: FormData): Promise<void> {
   const staff = await requireStaff(MANAGEMENT);
   const actor = await toActor(staff);
   if (formData.get("confirm") !== "yes") redirect("/invoices");
+  // Each value is "id:version" (the version the page showed); a bare id still works, without the check.
   const posted = formData.getAll("draftId").slice(0, MAX_POSTED_IDS);
+  const expectedVersions: Record<string, number> = {};
   const ids = [
     ...new Set(
       posted.flatMap((v) => {
-        const id = idSchema.safeParse(v);
-        return id.success ? [id.data.toLowerCase()] : [];
+        if (typeof v !== "string") return [];
+        const [idText, versionText, ...rest] = v.split(":");
+        const id = idSchema.safeParse(idText);
+        if (!id.success || rest.length > 0) return [];
+        const key = id.data.toLowerCase();
+        if (versionText !== undefined) {
+          const version = versionSchema.safeParse(versionText);
+          if (!version.success) return [];
+          expectedVersions[key] = version.data;
+        }
+        return [key];
       }),
     ),
   ];
@@ -120,7 +133,7 @@ export async function issueAllAction(formData: FormData): Promise<void> {
   const remaining = ids.length - batch.length;
   let result: IssueAllResult;
   try {
-    result = await issueAllDrafts(getDb(), actor, { run: inTx, only: batch });
+    result = await issueAllDrafts(getDb(), actor, { run: inTx, only: batch, expectedVersions });
   } catch (error) {
     redirect(`/invoices?notice=${codeFor(error)}`);
   }
@@ -206,9 +219,18 @@ export async function issueInvoiceAction(_prev: FormState, formData: FormData): 
   const actor = await toActor(staff);
   const id = idSchema.safeParse(formData.get("id"));
   if (!id.success) return { error: BAD_REQUEST, nonce: Date.now() };
+  const version = versionSchema.safeParse(formData.get("version"));
+  if (!version.success) return { error: BAD_REQUEST, nonce: Date.now() };
   try {
-    await inTx((tx) => issueInvoice(tx, actor, id.data));
+    await inTx((tx) => issueInvoice(tx, actor, id.data, { expectedVersion: version.data }));
   } catch (error) {
+    if (error instanceof InvoiceDraftConflictError) {
+      // Nothing is reloaded here, so whatever is typed in the draft form above stays as it is.
+      return {
+        error: `${error.message} Copy anything you typed before you reload.`,
+        nonce: Date.now(),
+      };
+    }
     return failure(error);
   }
   emailInvoicesLater(actor, [id.data]);

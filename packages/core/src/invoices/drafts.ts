@@ -562,6 +562,8 @@ export async function listInvoices(
 
 export type DraftReviewItem = {
   id: string;
+  /** The draft version shown, posted back by "Issue all" so a draft saved since is not issued unseen. */
+  version: number;
   kind: "MONTHLY" | "ONCE_OFF";
   customer: { id: string; number: number; displayName: string };
   billTo: { id: string; number: number; displayName: string };
@@ -584,6 +586,7 @@ export async function listDraftsForReview(
     take: 500,
     select: {
       id: true,
+      draftVersion: true,
       kind: true,
       serviceMonth: true,
       dueDate: true,
@@ -641,6 +644,7 @@ export async function listDraftsForReview(
     if (billToId !== d.customer.id) warnings.push("billToAgency");
     return {
       id: d.id,
+      version: d.draftVersion,
       kind: d.kind,
       customer: {
         id: d.customer.id,

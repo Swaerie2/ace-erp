@@ -7,7 +7,7 @@ import { listInvoiceActivity } from "./activity";
 import { createOnceOffDraft, saveInvoiceDraft } from "./drafts";
 import { issueAllDrafts, issueInvoice, voidInvoice } from "./issue";
 import { invoiceSnapshotSchema } from "./schemas";
-import { INVOICE_MESSAGES, InvoiceIssueError } from "./store";
+import { INVOICE_MESSAGES, InvoiceDraftConflictError, InvoiceIssueError } from "./store";
 import {
   auditFor,
   crew,
@@ -212,6 +212,72 @@ describe.skipIf(!dbTestsEnabled)("issuing an invoice", () => {
       const seqs = rows.map((r) => r.numberSeq ?? 0).sort((x, y) => x - y);
       expect(seqs).toHaveLength(2);
       expect((seqs[1] ?? 0) - (seqs[0] ?? 0)).toBe(1);
+    });
+  });
+
+  it("refuses to issue a draft that was saved again after the issuer opened it", async () => {
+    await withRollback(async (tx) => {
+      await prepare(tx);
+      const c = await makeBillingCustomer(tx);
+      // onceOffDraft saves once, so the draft is at version 2: the issuer "opened" version 2.
+      const id = await onceOffDraft(tx, c.customerId);
+      await saveInvoiceDraft(tx, manager, id, {
+        version: 2,
+        dueDate: null,
+        lines: [
+          { id: null, kind: "ONCE_OFF", description: "Changed by someone else", amountCents: 9 },
+        ],
+      });
+      const stale = await issueInvoice(tx, manager, id, { expectedVersion: 2 }).catch(
+        (e: unknown) => e,
+      );
+      expect(stale).toBeInstanceOf(InvoiceDraftConflictError);
+      expect((stale as Error).message).toBe(INVOICE_MESSAGES.issueConflict);
+      expect(INVOICE_MESSAGES.issueConflict).toBe(
+        "This draft was changed after you opened it. Reload it, check it, then issue it.",
+      );
+      const row = await tx.invoice.findUniqueOrThrow({
+        where: { id },
+        select: { status: true, numberSeq: true },
+      });
+      expect(row).toEqual({ status: "DRAFT", numberSeq: null });
+      expect((await auditFor(tx, "invoice", id)).map((a) => a.action)).not.toContain(
+        "invoice.issued",
+      );
+
+      // The current version issues.
+      const issued = await issueInvoice(tx, manager, id, { expectedVersion: 3 });
+      expect(issued.id).toBe(id);
+
+      // Without a version (older callers) it still issues.
+      const other = await onceOffDraft(tx, c.customerId, 1000);
+      expect((await issueInvoice(tx, manager, other)).id).toBe(other);
+    });
+  });
+
+  it("issue-all with a stale version fails only that draft", async () => {
+    await withRollback(async (tx) => {
+      await prepare(tx);
+      const c = await makeBillingCustomer(tx);
+      const a = await onceOffDraft(tx, c.customerId, 1000);
+      const b = await onceOffDraft(tx, c.customerId, 2000);
+      await saveInvoiceDraft(tx, manager, b, {
+        version: 2,
+        dueDate: null,
+        lines: [{ id: null, kind: "ONCE_OFF", description: "Changed", amountCents: 3000 }],
+      });
+      const result = await issueAllDrafts(tx, manager, {
+        run: sameTx(tx),
+        only: [a, b],
+        expectedVersions: { [a.toUpperCase()]: 2, [b]: 2 },
+      });
+      expect(result.issued.map((i) => i.id)).toEqual([a]);
+      expect(result.failed).toEqual([{ id: b, problem: INVOICE_MESSAGES.issueConflict }]);
+      const row = await tx.invoice.findUniqueOrThrow({
+        where: { id: b },
+        select: { status: true },
+      });
+      expect(row.status).toBe("DRAFT");
     });
   });
 });

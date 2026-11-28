@@ -239,8 +239,9 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
                 </summary>
                 <form action={issueAllAction} className="mt-3 space-y-3">
                   <input type="hidden" name="confirm" value="yes" />
+                  {/* "id:version": a draft saved after this page was opened is left as a draft. */}
                   {drafts.map((d) => (
-                    <input key={d.id} type="hidden" name="draftId" value={d.id} />
+                    <input key={d.id} type="hidden" name="draftId" value={`${d.id}:${d.version}`} />
                   ))}
                   <p className="text-sm text-charcoal/70">
                     Each draft above gets its invoice number and is emailed to the people who

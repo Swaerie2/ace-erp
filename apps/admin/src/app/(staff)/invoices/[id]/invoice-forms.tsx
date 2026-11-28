@@ -6,14 +6,26 @@ import { buttonClass } from "@/components/auth-card";
 import { dangerButtonClass, FormMessage, TextAreaField } from "@/components/form";
 import { issueInvoiceAction, voidInvoiceAction } from "../actions";
 
-/** Issue one draft; each problem shows on its own line. */
-export function IssueForm({ id, disabled }: { id: string; disabled: boolean }) {
+/**
+ * Issue one draft; each problem shows on its own line. `version` is the draft version on screen, so a draft
+ * saved by someone else since then is refused instead of issued unseen.
+ */
+export function IssueForm({
+  id,
+  version,
+  disabled,
+}: {
+  id: string;
+  version: number;
+  disabled: boolean;
+}) {
   const [state, action, pending] = useActionState(issueInvoiceAction, undefined);
   const formRef = useRef<HTMLFormElement>(null);
   useFocusOnFeedback(formRef, state?.nonce);
   return (
     <form ref={formRef} action={action} className="space-y-3">
       <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="version" value={version} />
       {state?.error ? (
         <p
           role="alert"

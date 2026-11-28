@@ -56,12 +56,18 @@ export const INVOICE_MESSAGES = {
   quoteNotAccepted: "Only an accepted quote of this customer can be invoiced.",
   quoteNoOnceOff: "That quote has no accepted once-off work to invoice.",
   runMonth: "Choose a month from a year ago up to next month.",
+  issueConflict: "This draft was changed after you opened it. Reload it, check it, then issue it.",
 } as const;
 
-/** Two people saved the same draft; the later one must reload instead of overwriting. */
+/**
+ * The draft changed after the person opened it: two people saved the same draft (the later one must reload
+ * instead of overwriting), or someone issues a version they never saw (pass INVOICE_MESSAGES.issueConflict).
+ */
 export class InvoiceDraftConflictError extends DomainError {
-  constructor() {
-    super("This invoice was changed somewhere else. Reload the page to see the latest version.");
+  constructor(
+    message = "This invoice was changed somewhere else. Reload the page to see the latest version.",
+  ) {
+    super(message);
     this.name = "InvoiceDraftConflictError";
   }
 }
