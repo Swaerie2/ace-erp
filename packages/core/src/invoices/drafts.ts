@@ -3,6 +3,7 @@ import { assertRole, DomainError, MANAGEMENT, type Actor } from "../customers/ac
 import { lockCustomer } from "../customers/store";
 import type { Prisma } from "../generated/prisma/client";
 import { formatQuoteReference, fromDateString, toDateString, todaySA } from "../quotes/reference";
+import { addMonths } from "./dates";
 import { NEW_LINE_KINDS, type DraftWarning, type InvoiceDisplayStatus } from "./labels";
 import { fitDescription, invoiceDisplayStatus, sumLineCents } from "./money";
 import { formatInvoiceReference, parseInvoiceSearch } from "./reference";
@@ -603,6 +604,8 @@ export type DraftReviewItem = {
   totalCents: number;
   lineCount: number;
   warnings: DraftWarning[];
+  /** With the "missingMonth" warning: the month before this draft's ("YYYY-MM"), which has no live invoice. */
+  missingMonth: string | null;
 };
 
 /** Every draft, oldest first, with the warnings the owner should look at before issuing. */
@@ -658,18 +661,26 @@ export async function listDraftsForReview(
     const billToId = billToIdFor(d.customer);
     const warnings: DraftWarning[] = [];
     if (!withEmail.has(billToId)) warnings.push("noEmail");
-    if (
-      d.kind === "MONTHLY" &&
-      d.serviceMonth &&
-      !monthly.some(
-        (m) =>
-          m.customerId === d.customer.id &&
-          m.id !== d.id &&
-          m.serviceMonth !== null &&
-          m.serviceMonth.getTime() < (d.serviceMonth?.getTime() ?? 0),
-      )
-    ) {
-      warnings.push("firstMonth");
+    const serviceMonth = d.serviceMonth ? toDateString(d.serviceMonth).slice(0, 7) : null;
+    let missingMonth: string | null = null;
+    if (d.kind === "MONTHLY" && serviceMonth) {
+      const earlier = monthly
+        .flatMap((m) =>
+          m.customerId === d.customer.id && m.id !== d.id && m.serviceMonth
+            ? [toDateString(m.serviceMonth).slice(0, 7)]
+            : [],
+        )
+        .filter((month) => month < serviceMonth);
+      if (earlier.length === 0) {
+        warnings.push("firstMonth");
+      } else {
+        // Billed before, but not the month just before this one (for example after a Post to Pre switch).
+        const before = addMonths(serviceMonth, -1);
+        if (!earlier.includes(before)) {
+          warnings.push("missingMonth");
+          missingMonth = before;
+        }
+      }
     }
     if (d.lines.some((l) => l.kind === "LATE_FEE")) warnings.push("lateFee");
     if (billToId !== d.customer.id) warnings.push("billToAgency");
@@ -687,11 +698,12 @@ export async function listDraftsForReview(
         number: d.customer.number,
         displayName: d.customer.displayName,
       },
-      serviceMonth: d.serviceMonth ? toDateString(d.serviceMonth).slice(0, 7) : null,
+      serviceMonth,
       dueDate: d.dueDate ? toDateString(d.dueDate) : null,
       totalCents: sumLineCents(d.lines),
       lineCount: d.lines.length,
       warnings,
+      missingMonth,
     };
   });
 }

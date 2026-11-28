@@ -1,4 +1,4 @@
-import { isValidDateString, todaySA } from "../quotes/reference";
+import { addDays, isValidDateString, todaySA } from "../quotes/reference";
 import type { BillingTiming } from "./labels";
 
 const MONTH = /^(\d{4})-(0[1-9]|1[0-2])$/;
@@ -73,6 +73,46 @@ export function proRata(
     days,
     daysInMonth: dim,
   };
+}
+
+/**
+ * The date the normal monthly run bills this service month (the 20th of its run month): Pre, the 20th of the
+ * month before; Post, the 20th of the month itself.
+ */
+export function runDateFor(serviceMonth: string, timing: BillingTiming): string {
+  return `${timing === "PRE" ? addMonths(serviceMonth, -1) : serviceMonth}-20`;
+}
+
+/**
+ * The date part of the start-month catch-up rule: a first agreement starting in `serviceMonth` needs a
+ * part-month invoice of its own when that month is this month or last month (South African date `today`) and
+ * the normal run for it was already due, so that run could not have billed it. Older months are left alone,
+ * so old history never floods the list. The other conditions (no live monthly invoice for that month, an
+ * active customer, a first agreement with something priced) are checked against the database.
+ */
+export function startMonthCatchUpNeeded(
+  serviceMonth: string,
+  timing: BillingTiming,
+  today: string,
+): boolean {
+  if (!isMonthString(serviceMonth)) return false;
+  const current = monthOf(today);
+  if (serviceMonth !== current && serviceMonth !== addMonths(current, -1)) return false;
+  return today >= runDateFor(serviceMonth, timing);
+}
+
+/**
+ * The due date of a catch-up draft: the later of the normal due date for that month's run and a week from
+ * today, but never later than a week after the service month ends, and never before today (a draft's due date
+ * must be from today on).
+ */
+export function catchUpDueDate(serviceMonth: string, timing: BillingTiming, today: string): string {
+  const normal = dueDateFor(monthOf(runDateFor(serviceMonth, timing)), timing);
+  const weekOn = addDays(today, 7);
+  const latest = addDays(lastDayOf(serviceMonth), 7);
+  const due = normal > weekOn ? normal : weekOn;
+  const capped = due < latest ? due : latest;
+  return capped < today ? today : capped;
 }
 
 /** A run month from 12 months before the current month up to next month. */

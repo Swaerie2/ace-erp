@@ -1,3 +1,5 @@
+import { formatMonthLabel } from "./dates";
+
 export const BILLING_TIMINGS = ["PRE", "POST"] as const;
 export type BillingTiming = (typeof BILLING_TIMINGS)[number];
 export const BILLING_TIMING_LABELS: Record<BillingTiming, string> = {
@@ -49,14 +51,32 @@ export const INVOICE_STATUS_LABELS: Record<InvoiceDisplayStatus, string> = {
   VOID: "Void",
 };
 
-export const DRAFT_WARNINGS = ["noEmail", "firstMonth", "lateFee", "billToAgency"] as const;
+export const DRAFT_WARNINGS = [
+  "noEmail",
+  "firstMonth",
+  "lateFee",
+  "billToAgency",
+  "missingMonth",
+] as const;
 export type DraftWarning = (typeof DRAFT_WARNINGS)[number];
 export const DRAFT_WARNING_LABELS: Record<DraftWarning, string> = {
   noEmail: "No email on file: the invoice will not be emailed",
   firstMonth: "First month: check the amounts and any part month",
   lateFee: "Includes a suggested late payment fee",
   billToAgency: "Billed to the managing agency",
+  missingMonth: "No invoice exists for the month before. Check whether that month was billed.",
 };
+
+/** A warning's words for one draft: "missingMonth" names the month ("YYYY-MM") that has no invoice. */
+export function draftWarningText(
+  warning: DraftWarning,
+  draft: { missingMonth: string | null },
+): string {
+  if (warning === "missingMonth" && draft.missingMonth) {
+    return `No invoice exists for ${formatMonthLabel(draft.missingMonth)}. Check whether that month was billed.`;
+  }
+  return DRAFT_WARNING_LABELS[warning];
+}
 
 export const RUN_SKIP_REASONS = [
   "alreadyInvoiced",

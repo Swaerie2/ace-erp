@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addMonths,
+  catchUpDueDate,
   currentMonthSA,
   daysInMonth,
   dueDateFor,
@@ -11,8 +12,10 @@ import {
   lastDayOf,
   monthOf,
   proRata,
+  runDateFor,
   runMonthAllowed,
   serviceMonthFor,
+  startMonthCatchUpNeeded,
 } from "./dates";
 
 describe("months", () => {
@@ -129,5 +132,63 @@ describe("labels", () => {
     expect(formatMonthLabel("2027-01")).toBe("January 2027");
     expect(formatDayMonth("2026-12-10")).toBe("10 Dec");
     expect(formatDayMonth("2027-02-01")).toBe("1 Feb");
+  });
+});
+
+describe("start-month catch-up", () => {
+  it("dates the normal run for a service month: Pre the 20th before, Post the 20th of it", () => {
+    expect(runDateFor("2026-12", "PRE")).toBe("2026-11-20");
+    expect(runDateFor("2026-12", "POST")).toBe("2026-12-20");
+    // Across the year end
+    expect(runDateFor("2027-01", "PRE")).toBe("2026-12-20");
+    expect(runDateFor("2027-01", "POST")).toBe("2027-01-20");
+  });
+
+  it("needs a catch-up only once the normal run is due, for this month or last month", () => {
+    // Pre, first service 27 Nov, accepted 25 Nov: the run for November was on 20 Oct.
+    expect(startMonthCatchUpNeeded("2026-11", "PRE", "2026-11-25")).toBe(true);
+    // Post: the run for November is on 20 Nov.
+    expect(startMonthCatchUpNeeded("2026-11", "POST", "2026-11-19")).toBe(false);
+    expect(startMonthCatchUpNeeded("2026-11", "POST", "2026-11-20")).toBe(true);
+    expect(startMonthCatchUpNeeded("2026-11", "POST", "2026-11-30")).toBe(true);
+    // Last month still counts (an agreement that started last month and was never billed).
+    expect(startMonthCatchUpNeeded("2026-11", "POST", "2026-12-05")).toBe(true);
+    expect(startMonthCatchUpNeeded("2026-11", "PRE", "2026-12-31")).toBe(true);
+    // Two months back and more: never (old history does not flood the list).
+    expect(startMonthCatchUpNeeded("2026-10", "PRE", "2026-12-01")).toBe(false);
+    expect(startMonthCatchUpNeeded("2026-09", "POST", "2026-11-25")).toBe(false);
+    // Next month: not yet (the cap is this month and last month).
+    expect(startMonthCatchUpNeeded("2026-12", "PRE", "2026-11-25")).toBe(false);
+    expect(startMonthCatchUpNeeded("2026-12", "POST", "2026-11-25")).toBe(false);
+  });
+
+  it("works across the year end and in February", () => {
+    expect(startMonthCatchUpNeeded("2026-12", "POST", "2027-01-03")).toBe(true);
+    expect(startMonthCatchUpNeeded("2027-01", "PRE", "2027-01-02")).toBe(true);
+    expect(startMonthCatchUpNeeded("2027-01", "POST", "2027-01-19")).toBe(false);
+    expect(startMonthCatchUpNeeded("2027-02", "POST", "2027-02-20")).toBe(true);
+    expect(startMonthCatchUpNeeded("2027-02", "POST", "2027-03-01")).toBe(true);
+    expect(startMonthCatchUpNeeded("2026-12", "PRE", "2027-02-01")).toBe(false);
+  });
+
+  it("refuses a month that is not a month", () => {
+    expect(startMonthCatchUpNeeded("2026-13", "PRE", "2026-11-25")).toBe(false);
+    expect(startMonthCatchUpNeeded("", "POST", "2026-11-25")).toBe(false);
+  });
+
+  it("is due a week from today at the earliest, never past a week after the month ends, never in the past", () => {
+    // Pre November, today 25 Nov: the normal due date (31 Oct) has passed, so a week from today.
+    expect(catchUpDueDate("2026-11", "PRE", "2026-11-25")).toBe("2026-12-02");
+    // Post November on the 20th: a week from today (27 Nov) is later than the normal due date (25 Nov).
+    expect(catchUpDueDate("2026-11", "POST", "2026-11-20")).toBe("2026-11-27");
+    // A week from today would pass a week after the month end (7 Dec): 7 Dec.
+    expect(catchUpDueDate("2026-11", "POST", "2026-12-03")).toBe("2026-12-07");
+    // Last month, long after: never in the past, so today.
+    expect(catchUpDueDate("2026-11", "PRE", "2026-12-20")).toBe("2026-12-20");
+    // February 2027 has 28 days: at most 7 March.
+    expect(catchUpDueDate("2027-02", "POST", "2027-03-05")).toBe("2027-03-07");
+    expect(catchUpDueDate("2027-02", "POST", "2027-02-20")).toBe("2027-02-27");
+    // Across the year end
+    expect(catchUpDueDate("2026-12", "POST", "2026-12-28")).toBe("2027-01-04");
   });
 });

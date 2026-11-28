@@ -57,7 +57,7 @@ export function isMonthlyAgreementLine(line: {
  * other way (`agreementEndedAt` set without `agreementReplacedById`) is never used. Reversing a replacement
  * clears both columns on the old quote, so it is current again.
  */
-const BILLABLE_AGREEMENT = {
+export const BILLABLE_AGREEMENT = {
   status: "ACCEPTED",
   OR: [{ agreementEndedAt: null }, { agreementReplacedById: { not: null } }],
   property: { archivedAt: null },
@@ -104,7 +104,7 @@ function laterFirst(
  * earlier-starting agreement at all: a brand new agreement may be pro-rated, a replacement is billed for the
  * whole month at its own price.
  */
-async function loadAgreements(tx: InvoiceStore, customerId: string, serviceMonth: string) {
+export async function loadAgreements(tx: InvoiceStore, customerId: string, serviceMonth: string) {
   const quotes = await tx.quote.findMany({
     where: { customerId, ...BILLABLE_AGREEMENT },
     select: {
@@ -199,7 +199,7 @@ async function lateFeeLines(tx: InvoiceStore, customerId: string, ctx: Context) 
  * lines in quote order (lines of zero left out). Only a brand new agreement starting after the 1st of the service
  * month is pro-rated; a replacement is billed for the whole month.
  */
-function serviceLinesFor(
+export function serviceLinesFor(
   agreements: Awaited<ReturnType<typeof loadAgreements>>,
   serviceMonth: string,
 ) {

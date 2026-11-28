@@ -13,6 +13,7 @@ import {
   listInvoices,
   saveInvoiceDraft,
 } from "./drafts";
+import { DRAFT_WARNING_LABELS, draftWarningText } from "./labels";
 import { InvoiceDraftConflictError } from "./store";
 import {
   auditFor,
@@ -532,6 +533,52 @@ describe.skipIf(!dbTestsEnabled)("reading invoices", () => {
       expect(b?.warnings).toEqual(["firstMonth"]);
       // the invoice page shows the same current bill-to for the draft
       expect((await getInvoice(tx, manager, second.id))?.billTo.id).toBe(agency.customerId);
+      expect(a?.missingMonth).toBeNull();
+      expect(b?.missingMonth).toBeNull();
+    });
+  });
+
+  it("warns when the month before a monthly draft was never billed (a Post to Pre switch gap)", async () => {
+    await withRollback(async (tx) => {
+      const c = await makeBillingCustomer(tx);
+      await makeIssuedInvoice(tx, {
+        customerId: c.customerId,
+        dueDate: "2099-01-25",
+        kind: "MONTHLY",
+        serviceMonth: "2099-01",
+      });
+      // February was voided: it does not count as billed.
+      const voided = await makeIssuedInvoice(tx, {
+        customerId: c.customerId,
+        dueDate: "2099-02-25",
+        kind: "MONTHLY",
+        serviceMonth: "2099-02",
+      });
+      await tx.invoice.update({
+        where: { id: voided },
+        data: { status: "VOID", voidedAt: new Date() },
+        select: { id: true },
+      });
+      const march = await tx.invoice.create({
+        data: {
+          customerId: c.customerId,
+          billToCustomerId: c.customerId,
+          kind: "MONTHLY",
+          serviceMonth: fromDateString("2099-03-01"),
+          dueDate: fromDateString("2099-02-28"),
+          lines: {
+            create: [{ sortOrder: 1, kind: "SERVICE", description: "Garden", amountCents: 1000 }],
+          },
+        },
+        select: { id: true },
+      });
+      const item = (await listDraftsForReview(tx, manager)).find((d) => d.id === march.id);
+      expect(item?.warnings).toEqual(["missingMonth"]);
+      expect(item?.missingMonth).toBe("2099-02");
+      expect(item && draftWarningText("missingMonth", item)).toBe(
+        "No invoice exists for February 2099. Check whether that month was billed.",
+      );
+      expect(item && draftWarningText("noEmail", item)).toBe(DRAFT_WARNING_LABELS.noEmail);
     });
   });
 });
