@@ -491,9 +491,8 @@ These apply to every module. A module is not finished until it follows all of th
   against. The fingerprint (`contentHash`) of an anonymised invoice no longer matches its contents, so a
   future "verify" feature must treat those invoices as unverifiable. A payment reference or note typed for
   an agency may still name an anonymised complex (kept on purpose).
-- The Invoices list works out Unpaid, Overdue and Paid over the newest 2000 invoices that match the
-  search, so very old unpaid invoices can drop out of those filters after a year or more of invoicing.
-  The reported payments list shows the newest 200.
+- The Invoices list works out the Not yet due, Overdue and Paid filters in the database over every issued
+  invoice (no cap), then pages the matches. The reported payments list shows the newest 200.
 - Payment reports ("I have paid") and every portal invoice page are stage 5b. A report for an invoice that
   was voided later can still be confirmed (the money becomes credit).
 - Emails are sent one after the other inside `after()`, so a very large batch could outlast the hosting

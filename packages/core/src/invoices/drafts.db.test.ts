@@ -384,6 +384,97 @@ describe.skipIf(!dbTestsEnabled)("reading invoices", () => {
     });
   });
 
+  it("filters money statuses in the database: oldest overdue found, paging and totals right", async () => {
+    await withRollback(async (tx) => {
+      const c = await makeBillingCustomer(tx);
+      const other = await makeBillingCustomer(tx);
+      // createdAt is the same for every row of one transaction, so each row gets its own (list order).
+      let year = 2010;
+      const aged = async (id: string) => {
+        year += 1;
+        await tx.invoice.update({
+          where: { id },
+          data: { createdAt: new Date(`${year}-01-01T00:00:00Z`) },
+          select: { id: true },
+        });
+        return id;
+      };
+      const issued = async (dueDate: string, totalCents: number) =>
+        aged(await makeIssuedInvoice(tx, { customerId: c.customerId, dueDate, totalCents }));
+      const pay = (invoiceId: string, amountCents: number, voided = false) =>
+        makePayment(tx, {
+          payerCustomerId: c.customerId,
+          amountCents,
+          receivedOn: "2026-02-01",
+          allocations: [{ invoiceId, amountCents }],
+          voided,
+        });
+
+      // The oldest: overdue, part paid, plus a voided payment that must not count.
+      const oldOverdue = await issued("2026-01-31", 100000);
+      await pay(oldOverdue, 30000);
+      await pay(oldOverdue, 70000, true);
+      // Due today is not overdue.
+      const dueToday = await issued(todaySA(), 4000);
+      // Five newer paid ones.
+      const paid: string[] = [];
+      for (let n = 0; n < 5; n += 1) {
+        const id = await issued("2099-01-31", 1000);
+        await pay(id, 1000);
+        paid.push(id);
+      }
+      const notDue = await issued("2099-01-31", 5000);
+      const partPaid = await issued("2099-01-31", 5000);
+      await pay(partPaid, 2000);
+      // Paid only by a voided payment: still owing.
+      const voidPaid = await issued("2099-01-31", 1000);
+      await pay(voidPaid, 1000, true);
+      // A void invoice past its due date, and a draft: in neither money filter.
+      const voided = await issued("2026-01-31", 9000);
+      await tx.invoice.update({
+        where: { id: voided },
+        data: { status: "VOID", voidedAt: new Date(), voidedById: manager.id, voidReason: "x" },
+        select: { id: true },
+      });
+      await aged(
+        (
+          await tx.invoice.create({
+            data: { customerId: c.customerId, billToCustomerId: c.customerId, kind: "ONCE_OFF" },
+            select: { id: true },
+          })
+        ).id,
+      );
+      // Another customer's overdue invoice: the search keeps it out.
+      await makeIssuedInvoice(tx, { customerId: other.customerId, dueDate: "2026-01-31" });
+
+      const q = c.displayName;
+      const ids = async (status: string, page = 1, pageSize = 2) => {
+        const r = await listInvoices(tx, manager, { status, q, page, pageSize });
+        return { ids: r.items.map((i) => i.id), total: r.total };
+      };
+      // Newest first (createdAt desc) everywhere.
+      expect(await ids("OVERDUE")).toEqual({ ids: [oldOverdue], total: 1 });
+      expect(await ids("PAID", 1)).toEqual({ ids: [paid[4], paid[3]], total: 5 });
+      expect(await ids("PAID", 3)).toEqual({ ids: [paid[0]], total: 5 });
+      expect(await ids("UNPAID", 1, 10)).toEqual({
+        ids: [voidPaid, partPaid, notDue, dueToday],
+        total: 4,
+      });
+      expect(await ids("UNPAID", 2, 3)).toEqual({ ids: [dueToday], total: 4 });
+      // Without the filter the old overdue one is last: on page 6 of 2-per-page, after the due-today one.
+      const all = await listInvoices(tx, manager, { q, pageSize: 2, page: 6 });
+      expect(all.total).toBe(12);
+      expect(all.items.map((i) => i.id)).toEqual([dueToday, oldOverdue]);
+      expect(all.items.map((i) => i.displayStatus)).toEqual(["UNPAID", "OVERDUE"]);
+      // A page past the end is empty but the total stays.
+      expect(await ids("OVERDUE", 5)).toEqual({ ids: [], total: 1 });
+      // The search by another name finds none of these.
+      expect(
+        (await listInvoices(tx, manager, { status: "OVERDUE", q: "ZZ no such name" })).total,
+      ).toBe(0);
+    });
+  });
+
   it("warns on drafts: no email, first month, late fee, billed to the agency", async () => {
     await withRollback(async (tx) => {
       const agency = await makeBillingCustomer(tx, { email: null });

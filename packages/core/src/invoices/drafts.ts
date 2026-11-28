@@ -505,9 +505,47 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
   return Math.min(max, Math.max(min, whole));
 }
 
-/** The longest list worked through in memory (statuses depend on balances, which are not stored). */
-const LIST_CAP = 2000;
+type MoneyFilter = "UNPAID" | "OVERDUE" | "PAID";
 
+/**
+ * The ids of the issued invoices in one money filter, worked out in the database (balances are not stored):
+ * paid = money allocated from payments that are not voided. PAID: nothing left owing. OVERDUE: owing and the
+ * due date before today (South African date). UNPAID ("Not yet due"): owing and due today or later, or no due
+ * date. Void invoices and drafts are never in these. The filter and today are parameters, never spliced in.
+ */
+async function moneyFilterIds(store: InvoiceStore, filter: MoneyFilter): Promise<string[]> {
+  const today = todaySA();
+  const rows = await store.$queryRaw<{ id: string }[]>`
+    select i."id"::text as "id"
+    from "invoices" i
+    cross join lateral (
+      select
+        coalesce(i."totalCents", (
+          select coalesce(sum(l."amountCents"), 0) from "invoice_lines" l where l."invoiceId" = i."id"
+        ))::bigint as "total",
+        (
+          select coalesce(sum(a."amountCents"), 0)
+          from "payment_allocations" a
+          join "payments" p on p."id" = a."paymentId"
+          where a."invoiceId" = i."id" and p."voidedAt" is null
+        )::bigint as "paid"
+    ) m
+    where i."status" = 'ISSUED'
+      and (
+        (${filter}::text = 'PAID' and m."paid" >= m."total")
+        or (${filter}::text = 'OVERDUE' and m."paid" < m."total" and i."dueDate" < ${today}::date)
+        or (
+          ${filter}::text = 'UNPAID' and m."paid" < m."total"
+          and (i."dueDate" is null or i."dueDate" >= ${today}::date)
+        )
+      )`;
+  return rows.map((r) => r.id);
+}
+
+/**
+ * The staff invoice list, newest first, one page at a time. Search, status and the money filters are all done
+ * in the database, so paging and `total` cover every invoice (no cap).
+ */
 export async function listInvoices(
   store: InvoiceStore,
   actor: Actor,
@@ -520,7 +558,10 @@ export async function listInvoices(
   const and: Prisma.InvoiceWhereInput[] = [];
   if (filter === "DRAFT") and.push({ status: "DRAFT" });
   else if (filter === "VOID") and.push({ status: "VOID" });
-  else if (filter) and.push({ status: "ISSUED" });
+  else if (filter) {
+    // Every id that matches (a few thousand at most); the search below and the paging still apply.
+    and.push({ status: "ISSUED", id: { in: await moneyFilterIds(store, filter) } });
+  }
   const term = query.q?.trim().slice(0, 100);
   if (term) {
     const contains = { contains: term, mode: "insensitive" } as const;
@@ -537,27 +578,17 @@ export async function listInvoices(
     }
     and.push({ OR: or });
   }
+  const where: Prisma.InvoiceWhereInput = { AND: and };
+  // One after the other: `store` can be a transaction, which runs one query at a time.
+  const total = await store.invoice.count({ where });
   const rows = await store.invoice.findMany({
-    where: { AND: and },
+    where,
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: LIST_CAP,
+    skip: (page - 1) * pageSize,
+    take: pageSize,
     select: LIST_SELECT,
   });
-  const all = await toListItems(store, rows);
-  const wanted =
-    filter === "UNPAID"
-      ? all.filter((i) => i.displayStatus === "UNPAID" || i.displayStatus === "PART_PAID")
-      : filter === "OVERDUE"
-        ? all.filter((i) => i.displayStatus === "OVERDUE")
-        : filter === "PAID"
-          ? all.filter((i) => i.displayStatus === "PAID")
-          : all;
-  return {
-    items: wanted.slice((page - 1) * pageSize, page * pageSize),
-    total: wanted.length,
-    page,
-    pageSize,
-  };
+  return { items: await toListItems(store, rows), total, page, pageSize };
 }
 
 export type DraftReviewItem = {

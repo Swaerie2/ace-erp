@@ -48,7 +48,8 @@ const ISSUE_BATCH = 50;
 const FILTER_LABELS: Record<"ALL" | (typeof INVOICE_FILTERS)[number], string> = {
   ALL: "All",
   DRAFT: "Drafts",
-  UNPAID: "Unpaid",
+  // The address bar keeps status=UNPAID; only the words change. Overdue ones are under "Overdue".
+  UNPAID: "Not yet due",
   OVERDUE: "Overdue",
   PAID: "Paid",
   VOID: "Void",
@@ -299,6 +300,10 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
             );
           })}
         </nav>
+        <p className="text-sm text-charcoal/60">
+          Not yet due: still owing, due today or later. Overdue: still owing, past the due date.
+          Together they are everything still owed.
+        </p>
         {result.items.length === 0 ? (
           <p className="text-center text-charcoal/60">
             {q || status ? "No invoices match that search or filter." : "No invoices yet."}
