@@ -5,6 +5,8 @@ export const MAX_INVOICE_LINES = 40;
 export const MAX_LINE_CENTS = 100_000_000; // R1 000 000
 export const MAX_PAYMENT_CENTS = 100_000_000; // R1 000 000
 export const MAX_DESCRIPTION = 300;
+/** invoices.totalCents is a Postgres INTEGER: the largest total that can be stored (about R21 million). */
+export const MAX_INVOICE_TOTAL_CENTS = 2_147_483_647;
 
 /** Like parseRandToCents, but a leading minus is allowed (adjustments). */
 export function parseSignedRandToCents(input: string): number | null {
@@ -90,7 +92,9 @@ export function issueProblems(
       problems.push(`${n} cannot be negative. Only an adjustment can be.`);
     }
   });
-  if (sumLineCents(input.lines) <= 0) problems.push("The total must be above zero.");
+  const total = sumLineCents(input.lines);
+  if (total <= 0) problems.push("The total must be above zero.");
+  if (total > MAX_INVOICE_TOTAL_CENTS) problems.push("The total is too large to issue.");
   if (input.dueDate < today) problems.push("The due date has passed. Change it before issuing.");
   return problems;
 }

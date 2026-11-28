@@ -121,6 +121,18 @@ describe("issueProblems", () => {
       ),
     ).toEqual(["Line 1 needs an amount.", "The total must be above zero."]);
   });
+  it("refuses a total too large to store (above 2147483647 cents)", () => {
+    const line = (amountCents: number) => ({
+      kind: "ONCE_OFF" as const,
+      description: "Large job",
+      amountCents,
+    });
+    const big = Array.from({ length: 21 }, () => line(100_000_000));
+    expect(issueProblems({ lines: [...big, line(47_483_647)], dueDate: today }, today)).toEqual([]);
+    expect(issueProblems({ lines: [...big, line(47_483_648)], dueDate: today }, today)).toEqual([
+      "The total is too large to issue.",
+    ]);
+  });
   it("finds nothing wrong with a complete invoice", () => {
     expect(
       issueProblems(

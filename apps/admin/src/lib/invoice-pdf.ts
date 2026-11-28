@@ -69,9 +69,16 @@ export async function logoForPdf(actor: Actor): Promise<PdfLogo | null> {
 
 /**
  * The address of the logo for a document screen (`/company-logo?v=<version>`), or null when there is no
- * logo. The version changes with every upload, so the long browser cache never shows an old picture.
+ * logo. The version changes with every upload, so the long browser cache never shows an old picture. A
+ * problem reading it never breaks the page: it is then shown without the logo, and only fixed words are
+ * logged (never the error).
  */
 export async function logoSrcFor(actor: Actor): Promise<string | null> {
-  const { logo } = await getCompanyProfile(getDb(), actor);
-  return logo ? `/company-logo?v=${encodeURIComponent(logo.version)}` : null;
+  try {
+    const { logo } = await getCompanyProfile(getDb(), actor);
+    return logo ? `/company-logo?v=${encodeURIComponent(logo.version)}` : null;
+  } catch {
+    console.error("The company logo could not be checked, so the page was shown without it.");
+    return null;
+  }
 }

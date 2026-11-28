@@ -255,6 +255,29 @@ describe.skipIf(!dbTestsEnabled)("issuing an invoice", () => {
     });
   });
 
+  it("refuses a total too large to store with the usual list of problems", async () => {
+    await withRollback(async (tx) => {
+      await prepare(tx);
+      const c = await makeBillingCustomer(tx);
+      const { id } = await createOnceOffDraft(tx, manager, { customerId: c.customerId });
+      await saveInvoiceDraft(tx, manager, id, {
+        version: 1,
+        dueDate: null,
+        lines: Array.from({ length: 22 }, () => ({
+          id: null,
+          kind: "ONCE_OFF" as const,
+          description: "Large job",
+          amountCents: 100_000_000,
+        })),
+      });
+      const refused = await issueInvoice(tx, manager, id).catch((e: unknown) => e);
+      expect(refused).toBeInstanceOf(InvoiceIssueError);
+      expect((refused as InvoiceIssueError).problems).toEqual(["The total is too large to issue."]);
+      const row = await tx.invoice.findUniqueOrThrow({ where: { id }, select: { status: true } });
+      expect(row.status).toBe("DRAFT");
+    });
+  });
+
   it("issue-all with a stale version fails only that draft", async () => {
     await withRollback(async (tx) => {
       await prepare(tx);
