@@ -85,10 +85,11 @@ export function runDateFor(serviceMonth: string, timing: BillingTiming): string 
 
 /**
  * The date part of the start-month catch-up rule: a first agreement starting in `serviceMonth` needs a
- * part-month invoice of its own when that month is this month or last month (South African date `today`) and
- * the normal run for it was already due, so that run could not have billed it. Older months are left alone,
- * so old history never floods the list. The other conditions (no live monthly invoice for that month, an
- * active customer, a first agreement with something priced) are checked against the database.
+ * invoice of its own when that month is last month, this month or next month (South African date `today`)
+ * and the normal run for it was already due, so that run could not have billed it (next month qualifies
+ * only for Pre, from the 20th of this month). Older months are left alone, so old history never floods the
+ * list. The other conditions (no live monthly invoice for that month, an active customer, a first agreement
+ * with something priced) are checked against the database.
  */
 export function startMonthCatchUpNeeded(
   serviceMonth: string,
@@ -96,9 +97,14 @@ export function startMonthCatchUpNeeded(
   today: string,
 ): boolean {
   if (!isMonthString(serviceMonth)) return false;
-  const current = monthOf(today);
-  if (serviceMonth !== current && serviceMonth !== addMonths(current, -1)) return false;
+  if (!catchUpMonths(today).includes(serviceMonth)) return false;
   return today >= runDateFor(serviceMonth, timing);
+}
+
+/** The months a catch-up can be for, oldest first: last month, this month and next month. */
+export function catchUpMonths(today: string): string[] {
+  const current = monthOf(today);
+  return [addMonths(current, -1), current, addMonths(current, 1)];
 }
 
 /**

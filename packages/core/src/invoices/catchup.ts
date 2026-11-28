@@ -4,8 +4,8 @@ import { lockCustomer } from "../customers/store";
 import type { TxRunner } from "../portal/access";
 import { fromDateString, todaySA } from "../quotes/reference";
 import {
-  addMonths,
   catchUpDueDate,
+  catchUpMonths,
   firstDayOf,
   lastDayOf,
   monthOf,
@@ -40,13 +40,10 @@ export type StartMonthResult = {
   failed: number;
 };
 
-/** The months a catch-up can be for: last month, then this month (South African date). */
-const monthsFor = (today: string) => [addMonths(monthOf(today), -1), monthOf(today)];
-
 /**
  * The customers that may need a catch-up: an ACTIVE customer that is not anonymised, with a billable agreement
- * starting (or, with no start date, accepted) from the first day of last month. Each one is then checked
- * properly by `planFor`.
+ * starting (or, with no start date, accepted) from the first day of last month to the end of next month. Each
+ * one is then checked properly by `planFor`.
  */
 async function candidateCustomers(
   store: InvoiceStore,
@@ -54,7 +51,8 @@ async function candidateCustomers(
   only: string[] | null,
   take?: number,
 ) {
-  const from = fromDateString(firstDayOf(monthsFor(today)[0] ?? monthOf(today)));
+  const months = catchUpMonths(today);
+  const from = fromDateString(firstDayOf(months[0] ?? monthOf(today)));
   // A day early: an acceptance just after midnight in South Africa is still the day before in UTC.
   const acceptedFrom = new Date(from.getTime() - 24 * 60 * 60 * 1000);
   return store.quote.findMany({
@@ -67,7 +65,7 @@ async function candidateCustomers(
             {
               acceptedStartDate: {
                 gte: from,
-                lte: fromDateString(lastDayOf(monthOf(today))),
+                lte: fromDateString(lastDayOf(months[months.length - 1] ?? monthOf(today))),
               },
             },
             { acceptedStartDate: null, acceptedAt: { gte: acceptedFrom } },
@@ -85,7 +83,7 @@ async function candidateCustomers(
 
 /**
  * Whether the customer needs a part-month (catch-up) draft for `serviceMonth`, and what it holds. Null when it
- * does not: the customer is not an active, non-anonymised customer; the month is not this month or last month
+ * does not: the customer is not an active, non-anonymised customer; the month is not last, this or next month
  * or its normal run was not due yet (`startMonthCatchUpNeeded`); a live monthly invoice for the month exists;
  * or no property has its FIRST agreement starting in that month with something priced. The lines are built
  * exactly as the run builds them for that month (every agreement in force, a first agreement pro-rated),
@@ -140,7 +138,8 @@ async function planFor(
 /**
  * Clients who need a part-month invoice: their first agreement started after the normal invoice run for that
  * month (Pre: the run on the 20th of the month before; Post: the 20th of the month), so no run bills those
- * first days. This month and last month only, at most 200 rows. Read only: nothing is written.
+ * first days. Last month, this month and next month only (next month: Pre clients from the 20th), at most 200
+ * rows. Read only: nothing is written.
  */
 export async function listStartMonthCandidates(
   store: InvoiceStore,
@@ -151,7 +150,7 @@ export async function listStartMonthCandidates(
   const rows = await candidateCustomers(store, today, null, MAX_CANDIDATES);
   const out: StartMonthCandidate[] = [];
   for (const row of rows) {
-    for (const month of monthsFor(today)) {
+    for (const month of catchUpMonths(today)) {
       if (out.length >= MAX_CANDIDATES) return out;
       const plan = await planFor(store, row.customerId, month, today);
       if (!plan) continue;
@@ -177,7 +176,7 @@ async function catchUpCustomer(
   today: string,
 ): Promise<StartMonthResult["created"]> {
   const created: StartMonthResult["created"] = [];
-  for (const month of monthsFor(today)) {
+  for (const month of catchUpMonths(today)) {
     if (!(await planFor(tx, customerId, month, today))) continue;
     await lockCustomer(tx, customerId);
     const plan = await planFor(tx, customerId, month, today);

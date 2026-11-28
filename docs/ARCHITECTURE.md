@@ -443,8 +443,9 @@ These apply to every module. A module is not finished until it follows all of th
 - **Start-month catch-up (part-month invoices).** The run bills Pre clients a month ahead, so a client whose
   first agreement starts in a month whose run has already been (Pre: the 20th of the month before; Post:
   the 20th of the month) would never be billed for those first days. `catchup.ts` finds these clients
-  (only a property's first agreement, starting this month or last month: older months are never caught
-  up) that have no live monthly invoice for that month, and makes a DRAFT for that month with the lines
+  (only a property's first agreement, starting last month, this month or next month: older months are
+  never caught up, and next month only for Pre clients from the 20th) that have no live monthly invoice for
+  that month, and makes a DRAFT for that month with the lines
   the run would build (the part month charged by days, no late fees). It is due a week from today or on
   the normal due date if later, never more than a week after that month ends and never before today. It
   happens when staff record an acceptance in the staff app (after the acceptance has committed; a failure
@@ -493,8 +494,8 @@ These apply to every module. A module is not finished until it follows all of th
 - Only void-and-reissue corrects an issued invoice; there are no credit notes.
 - The run skips a client who is paused when it runs but cannot know about a pause part way through the
   month; the owner reviews the drafts.
-- A first month whose run had already been is caught up only for this month and last month (see Start-month
-  catch-up); an older one is not charged automatically. A new property added for a client who already has
+- A first month whose run had already been is caught up only for last month, this month and next month (see
+  Start-month catch-up); an older one is not charged automatically. A new property added for a client who already has
   that month's invoice is not caught up either (one monthly invoice per month): add its part month to the
   next draft by hand.
 - The late fee suggestion on a draft looks at the overdue invoices of the customer being invoiced (the

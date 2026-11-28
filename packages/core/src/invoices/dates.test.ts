@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addMonths,
   catchUpDueDate,
+  catchUpMonths,
   currentMonthSA,
   daysInMonth,
   dueDateFor,
@@ -157,9 +158,20 @@ describe("start-month catch-up", () => {
     // Two months back and more: never (old history does not flood the list).
     expect(startMonthCatchUpNeeded("2026-10", "PRE", "2026-12-01")).toBe(false);
     expect(startMonthCatchUpNeeded("2026-09", "POST", "2026-11-25")).toBe(false);
-    // Next month: not yet (the cap is this month and last month).
-    expect(startMonthCatchUpNeeded("2026-12", "PRE", "2026-11-25")).toBe(false);
+    // Next month, Pre: due from the 20th of this month (that run bills next month and has been).
+    expect(startMonthCatchUpNeeded("2026-12", "PRE", "2026-11-19")).toBe(false);
+    expect(startMonthCatchUpNeeded("2026-12", "PRE", "2026-11-20")).toBe(true);
+    expect(startMonthCatchUpNeeded("2026-12", "PRE", "2026-11-25")).toBe(true);
+    // Next month, Post: its run is the 20th of next month, so never yet.
     expect(startMonthCatchUpNeeded("2026-12", "POST", "2026-11-25")).toBe(false);
+    // Two months ahead: never.
+    expect(startMonthCatchUpNeeded("2027-01", "PRE", "2026-11-25")).toBe(false);
+  });
+
+  it("lists last month, this month and next month", () => {
+    expect(catchUpMonths("2026-11-25")).toEqual(["2026-10", "2026-11", "2026-12"]);
+    expect(catchUpMonths("2026-12-01")).toEqual(["2026-11", "2026-12", "2027-01"]);
+    expect(catchUpMonths("2027-01-31")).toEqual(["2026-12", "2027-01", "2027-02"]);
   });
 
   it("works across the year end and in February", () => {
@@ -169,6 +181,10 @@ describe("start-month catch-up", () => {
     expect(startMonthCatchUpNeeded("2027-02", "POST", "2027-02-20")).toBe(true);
     expect(startMonthCatchUpNeeded("2027-02", "POST", "2027-03-01")).toBe(true);
     expect(startMonthCatchUpNeeded("2026-12", "PRE", "2027-02-01")).toBe(false);
+    // Pre January from 20 December (across the year end), not before.
+    expect(startMonthCatchUpNeeded("2027-01", "PRE", "2026-12-19")).toBe(false);
+    expect(startMonthCatchUpNeeded("2027-01", "PRE", "2026-12-20")).toBe(true);
+    expect(startMonthCatchUpNeeded("2027-01", "POST", "2026-12-28")).toBe(false);
   });
 
   it("refuses a month that is not a month", () => {
@@ -190,5 +206,9 @@ describe("start-month catch-up", () => {
     expect(catchUpDueDate("2027-02", "POST", "2027-02-20")).toBe("2027-02-27");
     // Across the year end
     expect(catchUpDueDate("2026-12", "POST", "2026-12-28")).toBe("2027-01-04");
+    // Pre next month (December, today 25 Nov): normal due date 30 Nov, a week from today is later.
+    expect(catchUpDueDate("2026-12", "PRE", "2026-11-25")).toBe("2026-12-02");
+    // Pre January on 20 December: a week from today (27 Dec) is before the normal due date (31 Dec).
+    expect(catchUpDueDate("2027-01", "PRE", "2026-12-20")).toBe("2026-12-31");
   });
 });

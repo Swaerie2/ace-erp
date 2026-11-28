@@ -162,12 +162,95 @@ describe.skipIf(!dbTestsEnabled)("start-month catch-up", () => {
     });
   });
 
+  it("drafts next month for a Pre client accepted after the run, in full from the 1st, and the run then skips it", async () => {
+    await withRollback(async (tx) => {
+      const c = await client(tx, { timing: "PRE", start: "2026-12-01" });
+      const only = [c.customerId];
+      expect(await mine(tx, only)).toEqual([
+        {
+          customerId: c.customerId,
+          customerNumber: c.number,
+          customerName: c.displayName,
+          propertyLabel: c.propertyLabel,
+          firstServiceOn: "2026-12-01",
+          serviceMonth: "2026-12",
+          amountPreviewCents: 120000,
+        },
+      ]);
+      const result = await createStartMonthDrafts(tx, manager, {
+        run: sameTx(tx),
+        only,
+        today: TODAY,
+      });
+      expect(result.created.map((r) => r.serviceMonth)).toEqual(["2026-12"]);
+      const [dec] = await monthlyOf(tx, c.customerId);
+      // Starts on the 1st: the whole month, no part month. Normal due 30 Nov, a week from today is later.
+      expect(dec).toMatchObject({
+        status: "DRAFT",
+        serviceMonth: "2026-12-01",
+        dueDate: "2026-12-02",
+      });
+      expect(dec?.lines.map((l) => [l.description, l.amountCents])).toEqual([
+        [`${c.propertyLabel}: Weekly garden maintenance`, 120000],
+      ]);
+      // The November run (which bills Pre clients for December) pressed again: already invoiced.
+      const run = await createMonthlyDrafts(tx, manager, "2026-11", {
+        run: sameTx(tx),
+        only,
+        today: TODAY,
+      });
+      expect(run.created).toEqual([]);
+      expect(run.skipped.map((s) => s.reason)).toEqual(["alreadyInvoiced"]);
+      // And the catch-up a second time, or in December, adds nothing.
+      for (const today of [TODAY, "2026-12-05"]) {
+        expect(
+          (await createStartMonthDrafts(tx, manager, { run: sameTx(tx), only, today })).created,
+        ).toEqual([]);
+      }
+      expect((await monthlyOf(tx, c.customerId)).map((i) => i.serviceMonth)).toEqual([
+        "2026-12-01",
+      ]);
+    });
+  });
+
+  it("leaves a Pre client accepted before the 20th with a start next month to the run", async () => {
+    await withRollback(async (tx) => {
+      const c = await client(tx, { timing: "PRE", start: "2026-12-03" });
+      const only = [c.customerId];
+      expect(await mine(tx, only, "2026-11-10")).toEqual([]);
+      expect(
+        (
+          await createStartMonthDrafts(tx, manager, {
+            run: sameTx(tx),
+            only,
+            today: "2026-11-10",
+          })
+        ).created,
+      ).toEqual([]);
+      // The run on the 20th bills December (3 to 31 December: 29 of 31 days of R1,200.00 = R1,122.58).
+      await createMonthlyDrafts(tx, manager, "2026-11", {
+        run: sameTx(tx),
+        only,
+        today: "2026-11-20",
+      });
+      expect(await mine(tx, only)).toEqual([]);
+      expect(
+        (await createStartMonthDrafts(tx, manager, { run: sameTx(tx), only, today: TODAY }))
+          .created,
+      ).toEqual([]);
+      const all = await monthlyOf(tx, c.customerId);
+      expect(all.map((i) => [i.serviceMonth, i.lines.map((l) => l.amountCents)])).toEqual([
+        ["2026-12-01", [112258]],
+      ]);
+    });
+  });
+
   it("leaves alone a Post client accepted before the run, a start next month, a replacement and old history", async () => {
     await withRollback(async (tx) => {
       // Post, starting 17 Nov, seen on the 15th: the run on the 20th bills November.
       const early = await client(tx, { timing: "POST", start: "2026-11-17" });
-      // Starts next month: the normal run for it has not come yet.
-      const nextMonth = await client(tx, { timing: "PRE", start: "2026-12-03" });
+      // Post, starting next month: its run is on 20 December, not yet due.
+      const nextMonth = await client(tx, { timing: "POST", start: "2026-12-01" });
       // A replacement agreement starting this month is billed in full by the run, never pro-rated.
       const replaced = await makeBillingCustomer(tx, { billingTiming: "POST" });
       const old = await makeAcceptedQuote(tx, {
