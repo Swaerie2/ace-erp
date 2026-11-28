@@ -72,6 +72,11 @@ export type InvoiceDocument = {
   balanceLabel: string | null;
   bank: InvoiceSnapshot["bank"];
   bankReady: boolean;
+  /**
+   * Whether the "How to pay" block shows: false on a void or paid invoice (nothing to pay), true otherwise
+   * (a draft keeps it, so staff can preview what the customer will see).
+   */
+  showPayment: boolean;
   paymentReference: string;
   vatNote: string;
 };
@@ -112,6 +117,7 @@ export function buildInvoiceDocument(input: InvoiceDocumentInput): InvoiceDocume
       owing && input.paidCents > 0 ? formatZAR(Math.max(0, total - input.paidCents)) : null,
     bank: input.snapshot.bank,
     bankReady: bankDetailsReady(input.snapshot.bank),
+    showPayment: input.status !== "VOID" && input.status !== "PAID",
     paymentReference: input.snapshot.paymentReference,
     vatNote: NOT_VAT_REGISTERED,
   };
@@ -251,7 +257,8 @@ export type StatementDocument = {
     balance: string;
     overdue: boolean;
   }[];
-  byComplex: { name: string; invoiced: string; outstanding: string }[];
+  /** `customerId` is the complex (unique per row, so it is the list key). */
+  byComplex: { customerId: string; name: string; invoiced: string; outstanding: string }[];
   vatNote: string;
 };
 
@@ -309,6 +316,7 @@ export function buildStatementDocument(input: {
       overdue: o.overdue,
     })),
     byComplex: d.byComplex.map((c) => ({
+      customerId: c.customerId,
       name: c.customerName,
       invoiced: formatZAR(c.invoicedCents),
       outstanding: formatZAR(c.outstandingCents),

@@ -105,6 +105,16 @@ describe("buildInvoiceDocument", () => {
       balanceLabel: null,
     });
   });
+  it("shows how to pay only while something can be owed (and on a draft, for staff to preview)", () => {
+    const show = (status: InvoiceDocumentInput["status"]) =>
+      buildInvoiceDocument({ ...base, status }).showPayment;
+    expect(show("DRAFT")).toBe(true);
+    expect(show("UNPAID")).toBe(true);
+    expect(show("PART_PAID")).toBe(true);
+    expect(show("OVERDUE")).toBe(true);
+    expect(show("VOID")).toBe(false);
+    expect(show("PAID")).toBe(false);
+  });
   it("contains no em dash anywhere", () => {
     expect(JSON.stringify(buildInvoiceDocument(base))).not.toContain("\u2014");
   });
@@ -185,7 +195,9 @@ describe("buildStatementDocument", () => {
       ["R800.00", "", "R800.00"],
       ["", "R1,000.00", "-R200.00"],
     ]);
-    expect(doc.byComplex).toEqual([{ name: "ZZ A", invoiced: "R800.00", outstanding: "R0.00" }]);
+    expect(doc.byComplex).toEqual([
+      { customerId: "a", name: "ZZ A", invoiced: "R800.00", outstanding: "R0.00" },
+    ]);
     expect(doc.periodLabel).toMatch(/1\sNov\s2026 to 30\sNov\s2026/);
   });
   it("says which invoices a payment settled, in its description", () => {

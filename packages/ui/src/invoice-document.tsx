@@ -157,11 +157,14 @@ export function InvoiceDocumentView({
         </tfoot>
       </table>
       <p className="mt-2 text-xs text-charcoal/60">{doc.vatNote}</p>
-      <BankBlock
-        bank={doc.bank}
-        bankReady={doc.bankReady}
-        paymentReference={doc.paymentReference}
-      />
+      {/* Nothing to pay on a void or paid invoice, so no "How to pay" there. */}
+      {doc.showPayment ? (
+        <BankBlock
+          bank={doc.bank}
+          bankReady={doc.bankReady}
+          paymentReference={doc.paymentReference}
+        />
+      ) : null}
     </article>
   );
 }
@@ -249,7 +252,7 @@ export function StatementDocumentView({
           <h3 className="mt-6 font-display text-base font-semibold text-forest">Per complex</h3>
           <ul className="mt-2 divide-y divide-charcoal/10 text-sm">
             {doc.byComplex.map((c) => (
-              <li key={c.name} className="flex flex-wrap justify-between gap-2 py-2">
+              <li key={c.customerId} className="flex flex-wrap justify-between gap-2 py-2">
                 <span className="min-w-0 break-words font-semibold">{c.name}</span>
                 <span>
                   Invoiced {c.invoiced}, still owed {c.outstanding}

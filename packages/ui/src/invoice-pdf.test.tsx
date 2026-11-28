@@ -1,4 +1,4 @@
-import { deflateSync } from "node:zlib";
+import { deflateSync, inflateSync } from "node:zlib";
 import type { InvoiceDocument, QuoteDocument, StatementDocument } from "@ace/core";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { describe, expect, it } from "vitest";
@@ -51,6 +51,7 @@ function invoice(rowCount: number, overrides: Partial<InvoiceDocument> = {}): In
     balanceLabel: "R34,100.00",
     bank,
     bankReady: true,
+    showPayment: true,
     paymentReference: "C-0123",
     vatNote,
     ...overrides,
@@ -99,6 +100,7 @@ function statement(
       overdue: i % 3 === 0,
     })),
     byComplex: Array.from({ length: 5 }, (_, i) => ({
+      customerId: `c${i}`,
       name: `ZZ E2E Complex ${i}`,
       invoiced: "R800.00",
       outstanding: "R100.00",
@@ -207,6 +209,27 @@ const LOGOS = {
 /** True when the PDF embeds a picture (an image XObject). */
 const hasImage = (buffer: Buffer) => /\/Subtype \/Image/.test(buffer.toString("latin1"));
 
+/**
+ * The text drawn on a PDF, roughly: every compressed content stream is inflated and the hex strings the
+ * built-in fonts are written with are decoded and joined (kerning splits words, so spaces may be missing).
+ */
+function pdfText(buffer: Buffer): string {
+  const raw = buffer.toString("latin1");
+  let text = "";
+  for (const m of raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
+    let body: string;
+    try {
+      body = inflateSync(Buffer.from(m[1] ?? "", "latin1")).toString("latin1");
+    } catch {
+      continue;
+    }
+    for (const h of body.matchAll(/<([0-9a-fA-F]+)>/g)) {
+      text += Buffer.from(h[1] ?? "", "hex").toString("latin1");
+    }
+  }
+  return text;
+}
+
 /** Counts the pages of a PDF by its page objects. */
 function pageCount(buffer: Buffer): number {
   return buffer.toString("latin1").match(/\/Type \/Page\b(?!s)/g)?.length ?? 0;
@@ -237,6 +260,19 @@ describe("InvoicePdf", () => {
       }),
     );
     expect(buffer.subarray(0, 4).toString("latin1")).toBe("%PDF");
+  });
+  it("prints How to pay only when the document says so (not on a void or paid invoice)", async () => {
+    const shown = pdfText(await renderToBuffer(InvoicePdf({ doc: invoice(1) })));
+    expect(shown).toContain("How to pay");
+    expect(shown).toContain("1234567890");
+    for (const status of ["VOID", "PAID"] as const) {
+      const hidden = pdfText(
+        await renderToBuffer(InvoicePdf({ doc: invoice(1, { status, showPayment: false }) })),
+      );
+      expect(hidden).toContain("INV-2026-0007");
+      expect(hidden).not.toContain("How to pay");
+      expect(hidden).not.toContain("1234567890");
+    }
   });
   it("wraps 30 lines across pages without throwing", async () => {
     const buffer = await renderToBuffer(InvoicePdf({ doc: invoice(30) }));
@@ -277,6 +313,7 @@ describe("StatementPdf", () => {
       StatementPdf({
         doc: statement(65, {
           byComplex: Array.from({ length: 80 }, (_, i) => ({
+            customerId: `c${i}`,
             name: `ZZ E2E Complex ${i}`,
             invoiced: "R800.00",
             outstanding: "R100.00",

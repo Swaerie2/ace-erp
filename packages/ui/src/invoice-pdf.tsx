@@ -178,11 +178,14 @@ export function InvoicePdf({ doc, logo }: { doc: InvoiceDocument; logo?: PdfLogo
           ) : null}
           <Text style={s.small}>{doc.vatNote}</Text>
         </View>
-        <BankBox
-          bank={doc.bank}
-          bankReady={doc.bankReady}
-          paymentReference={doc.paymentReference}
-        />
+        {/* Nothing to pay on a void or paid invoice, so no "How to pay" there. */}
+        {doc.showPayment ? (
+          <BankBox
+            bank={doc.bank}
+            bankReady={doc.bankReady}
+            paymentReference={doc.paymentReference}
+          />
+        ) : null}
         <Footer
           left={`${doc.business.legalName} t/a ${doc.business.tradingName}${doc.business.website ? `, ${doc.business.website}` : ""}`}
           right={doc.reference}
@@ -271,7 +274,7 @@ export function StatementPdf({ doc, logo }: { doc: StatementDocument; logo?: Pdf
               <Text style={[s.headText, s.plain]}>STILL OWED</Text>
             </View>
             {doc.byComplex.map((c) => (
-              <View key={c.name} style={s.row} wrap={false}>
+              <View key={c.customerId} style={s.row} wrap={false}>
                 <Text style={s.rowText}>{c.name}</Text>
                 <Text style={s.plain}>{c.invoiced}</Text>
                 <Text style={s.amount}>{c.outstanding}</Text>
