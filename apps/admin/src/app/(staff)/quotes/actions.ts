@@ -240,7 +240,7 @@ export async function acceptQuoteAction(_prev: FormState, formData: FormData): P
   grantPortalAccessLater(id.data);
   if (flag) redirect(`/quotes/${id.data}?notice=${flag.toLowerCase()}`);
   const drafts = await catchUpDraftsAfterAcceptance(actor, id.data);
-  // Fixed codes only: one draft, or two (this month and next month; more cannot happen at acceptance).
+  // Fixed codes only: one draft, or several (one per month that was missed).
   const code = drafts === 0 ? null : drafts === 1 ? "catchup-1" : "catchup-2";
   redirect(code ? `/quotes/${id.data}?notice=${code}` : `/quotes/${id.data}`);
 }

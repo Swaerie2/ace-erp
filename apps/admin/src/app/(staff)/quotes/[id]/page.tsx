@@ -34,7 +34,7 @@ const NOTICES: Record<string, string> = {
   archived: "Accepted. The customer is archived and was left unchanged. Check the customer.",
   "catchup-1": "Accepted. 1 invoice draft was created for this client: see Invoices.",
   "catchup-2":
-    "Accepted. 2 invoice drafts were created for this client, one per month: see Invoices.",
+    "Accepted. Invoice drafts were created for this client, one per month that was missed: see Invoices.",
   cannot:
     "That could not be done. The quote may have changed. Check its status below and try again.",
 };

@@ -80,12 +80,12 @@ function pageNotice(sp: Search): NoticeText | null {
     const partFailed = n(sp.partFailed);
     return {
       text:
-        `Created ${plural(n(sp.created), "draft")} and ${plural(part, "part-month draft")} (for clients who accepted after the run for that month). Skipped ${plural(n(sp.skipped), "customer")} (already invoiced for that month, not started yet, nothing to bill, paused, archived or still a lead).` +
+        `Created ${plural(n(sp.created), "draft")} and ${plural(part, "catch-up draft")} (for clients who accepted after the run for that month). Skipped ${plural(n(sp.skipped), "customer")} (already invoiced for that month, not started yet, nothing to bill, paused, archived or still a lead).` +
         (failed > 0
           ? ` ${plural(failed, "customer")} could not be drafted: press the button again to retry.`
           : "") +
         (partFailed > 0
-          ? ` Some part-month drafts could not be created: press "Create part-month invoices" to retry.`
+          ? ` Some catch-up drafts could not be created: press "Create these invoices" to retry.`
           : ""),
       ok: failed === 0 && partFailed === 0,
     };
@@ -94,7 +94,7 @@ function pageNotice(sp: Search): NoticeText | null {
     const failed = n(sp.failed);
     return {
       text:
-        `Created ${plural(n(sp.created), "part-month draft")}. Check each one below, then issue it.` +
+        `Created ${plural(n(sp.created), "catch-up draft")}. Check each one below, then issue it.` +
         (failed > 0
           ? ` ${plural(failed, "client")} could not be drafted: press the button again to retry.`
           : ""),
@@ -131,8 +131,13 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
     invoiceSettingsStatus(db, actor),
     listDraftsForReview(db, actor),
     listInvoices(db, actor, { q, status, page }),
-    listStartMonthCandidates(db, actor),
+    // A failure of this extra lookup must never take the whole page down.
+    listStartMonthCandidates(db, actor).catch(() => {
+      console.error("The catch-up invoice list could not be read.");
+      return [];
+    }),
   ]);
+  const catchUpClients = new Set(partMonth.map((c) => c.customerId)).size;
   const pages = Math.max(1, Math.ceil(result.total / result.pageSize));
   const link = (over: { status?: string | undefined; page?: number }) => {
     const params = new URLSearchParams();
@@ -176,9 +181,9 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
           className="space-y-3 rounded-2xl bg-ochre/10 p-4 ring-1 ring-ochre/40"
         >
           <h2 id="part-month-heading" className="font-display text-lg font-semibold text-forest">
-            {partMonth.length === 1
-              ? "1 client needs a part-month invoice"
-              : `${partMonth.length} clients need a part-month invoice`}
+            {catchUpClients === 1
+              ? "1 client needs an invoice now"
+              : `${catchUpClients} clients need an invoice now`}
           </h2>
           <p className="text-sm text-charcoal">
             These clients accepted after the regular invoice run for that month, so no run would
@@ -213,7 +218,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
               <input key={id} type="hidden" name="customerId" value={id} />
             ))}
             <PendingButton
-              label="Create part-month invoices"
+              label="Create these invoices"
               pendingLabel="Creating..."
               className={primaryLinkClass}
             />
