@@ -19,9 +19,14 @@ export type InvoiceEmailDeps = {
   attachmentFor: (invoiceId: string) => Promise<EmailAttachment>;
 };
 
-/** Fixed words stored in the audit line of a failed email. */
-type FailReason = "no_recipient" | "attachment" | "send";
-type Outcome = { kind: "sent"; recipients: number } | { kind: "failed"; reason: FailReason };
+/**
+ * Fixed words stored in the audit line of a failed email. "prepare": the email could not be put together (for
+ * example the invoice's frozen snapshot does not read back); "send": every address was refused.
+ */
+type FailReason = "no_recipient" | "attachment" | "prepare" | "send";
+type Outcome =
+  | { kind: "sent"; recipients: number; failedRecipients: number }
+  | { kind: "failed"; reason: FailReason };
 
 /** "Resend email": the invoice must be issued. Owner or manager. */
 export async function checkInvoiceEmailable(
@@ -139,7 +144,13 @@ export async function emailIssuedInvoices(
       for (const chunk of chunkByLimits(attached)) {
         const rows = chunk.map((c) => c.inv);
         try {
-          const snapshot = invoiceSnapshotSchema.parse(rows[0]?.bankSnapshot);
+          const parsed = invoiceSnapshotSchema.safeParse(rows[0]?.bankSnapshot);
+          if (!parsed.success) {
+            console.error("Invoice emails could not be prepared.");
+            fail(rows, "prepare");
+            continue;
+          }
+          const snapshot = parsed.data;
           const items = rows.map((inv) => ({
             reference: formatInvoiceReference(inv) ?? "",
             forName: inv.customerId !== billToId ? inv.customer.displayName : null,
@@ -166,13 +177,17 @@ export async function emailIssuedInvoices(
             }
           }
           if (recipients > 0) {
-            for (const r of rows) outcomes.set(r.id, { kind: "sent", recipients });
+            const failedRecipients = emails.length - recipients;
+            for (const r of rows) {
+              outcomes.set(r.id, { kind: "sent", recipients, failedRecipients });
+            }
           } else {
             fail(rows, "send");
           }
         } catch {
+          // Each send has its own catch above, so this is a problem putting the email together.
           console.error("Invoice emails could not be prepared.");
-          fail(rows, "send");
+          fail(rows, "prepare");
         }
       }
     } catch {
@@ -198,7 +213,15 @@ export async function emailIssuedInvoices(
         actor,
         outcome.kind === "sent" ? "invoice.emailed" : "invoice.email_failed",
         inv.id,
-        outcome.kind === "sent" ? { recipients: outcome.recipients } : { reason: outcome.reason },
+        outcome.kind === "sent"
+          ? {
+              recipients: outcome.recipients,
+              // Only a count, and only when some addresses were refused.
+              ...(outcome.failedRecipients > 0
+                ? { failedRecipients: outcome.failedRecipients }
+                : {}),
+            }
+          : { reason: outcome.reason },
       );
     } catch {
       console.error("An invoice email result could not be saved.");

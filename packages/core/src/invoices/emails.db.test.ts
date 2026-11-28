@@ -204,6 +204,59 @@ describe.skipIf(!dbTestsEnabled)("emailing issued invoices", () => {
     });
   });
 
+  it("counts the addresses that failed when at least one got the email", async () => {
+    await withRollback(async (tx) => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const c = await makeBillingCustomer(tx);
+      const bad = await addContact(tx, c.customerId, { receivesInvoices: true });
+      const id = await issued(tx, c.customerId, c.customerId);
+      const result = await emailIssuedInvoices(tx, manager, [id], {
+        send: async (m) => {
+          if (m.to === bad) throw new Error("refused");
+        },
+        attachmentFor: pdfFor,
+      });
+      expect(result).toEqual({ sent: 1, failed: 0 });
+      const row = await tx.invoice.findUniqueOrThrow({
+        where: { id },
+        select: { emailStatus: true },
+      });
+      expect(row.emailStatus).toBe("SENT");
+      const audits = await auditFor(tx, "invoice", id);
+      expect(audits).toContainEqual({
+        action: "invoice.emailed",
+        after: { recipients: 1, failedRecipients: 1 },
+        actorId: manager.id,
+      });
+      expect(JSON.stringify(audits)).not.toContain("example.com");
+    });
+  });
+
+  it("records a broken frozen snapshot as prepare, not send", async () => {
+    await withRollback(async (tx) => {
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      const c = await makeBillingCustomer(tx);
+      const id = await issued(tx, c.customerId, c.customerId);
+      await tx.invoice.update({
+        where: { id },
+        data: { bankSnapshot: { broken: true } },
+        select: { id: true },
+      });
+      const send = vi.fn();
+      const result = await emailIssuedInvoices(tx, manager, [id], { send, attachmentFor: pdfFor });
+      expect(result).toEqual({ sent: 0, failed: 1 });
+      expect(send).not.toHaveBeenCalled();
+      expect(await auditFor(tx, "invoice", id)).toContainEqual({
+        action: "invoice.email_failed",
+        after: { reason: "prepare" },
+        actorId: manager.id,
+      });
+      expect(error.mock.calls.map(String).join("\n")).toContain(
+        "Invoice emails could not be prepared.",
+      );
+    });
+  });
+
   it("records no_recipient when the payer has nobody who receives invoices", async () => {
     await withRollback(async (tx) => {
       const c = await makeBillingCustomer(tx, { email: null });
