@@ -147,25 +147,43 @@ describe("start-month catch-up", () => {
 
   it("needs a catch-up only once the normal run is due, for this month or last month", () => {
     // Pre, first service 27 Nov, accepted 25 Nov: the run for November was on 20 Oct.
-    expect(startMonthCatchUpNeeded("2026-11", "PRE", "2026-11-25")).toBe(true);
+    expect(startMonthCatchUpNeeded("2026-11", "PRE", "2026-11-25", "2026-11-25")).toBe(true);
     // Post: the run for November is on 20 Nov.
-    expect(startMonthCatchUpNeeded("2026-11", "POST", "2026-11-19")).toBe(false);
-    expect(startMonthCatchUpNeeded("2026-11", "POST", "2026-11-20")).toBe(true);
-    expect(startMonthCatchUpNeeded("2026-11", "POST", "2026-11-30")).toBe(true);
+    expect(startMonthCatchUpNeeded("2026-11", "POST", "2026-11-19", "2026-11-19")).toBe(false);
+    expect(startMonthCatchUpNeeded("2026-11", "POST", "2026-11-20", "2026-11-20")).toBe(true);
+    expect(startMonthCatchUpNeeded("2026-11", "POST", "2026-11-30", "2026-11-30")).toBe(true);
     // Last month still counts (an agreement that started last month and was never billed).
-    expect(startMonthCatchUpNeeded("2026-11", "POST", "2026-12-05")).toBe(true);
-    expect(startMonthCatchUpNeeded("2026-11", "PRE", "2026-12-31")).toBe(true);
+    expect(startMonthCatchUpNeeded("2026-11", "POST", "2026-12-05", "2026-12-05")).toBe(true);
+    expect(startMonthCatchUpNeeded("2026-11", "PRE", "2026-12-31", "2026-12-31")).toBe(true);
     // Two months back and more: never (old history does not flood the list).
-    expect(startMonthCatchUpNeeded("2026-10", "PRE", "2026-12-01")).toBe(false);
-    expect(startMonthCatchUpNeeded("2026-09", "POST", "2026-11-25")).toBe(false);
+    expect(startMonthCatchUpNeeded("2026-10", "PRE", "2026-12-01", "2026-12-01")).toBe(false);
+    expect(startMonthCatchUpNeeded("2026-09", "POST", "2026-11-25", "2026-11-25")).toBe(false);
     // Next month, Pre: due from the 20th of this month (that run bills next month and has been).
-    expect(startMonthCatchUpNeeded("2026-12", "PRE", "2026-11-19")).toBe(false);
-    expect(startMonthCatchUpNeeded("2026-12", "PRE", "2026-11-20")).toBe(true);
-    expect(startMonthCatchUpNeeded("2026-12", "PRE", "2026-11-25")).toBe(true);
+    expect(startMonthCatchUpNeeded("2026-12", "PRE", "2026-11-19", "2026-11-19")).toBe(false);
+    expect(startMonthCatchUpNeeded("2026-12", "PRE", "2026-11-20", "2026-11-20")).toBe(true);
+    expect(startMonthCatchUpNeeded("2026-12", "PRE", "2026-11-25", "2026-11-25")).toBe(true);
     // Next month, Post: its run is the 20th of next month, so never yet.
-    expect(startMonthCatchUpNeeded("2026-12", "POST", "2026-11-25")).toBe(false);
+    expect(startMonthCatchUpNeeded("2026-12", "POST", "2026-11-25", "2026-11-25")).toBe(false);
     // Two months ahead: never.
-    expect(startMonthCatchUpNeeded("2027-01", "PRE", "2026-11-25")).toBe(false);
+    expect(startMonthCatchUpNeeded("2027-01", "PRE", "2026-11-25", "2026-11-25")).toBe(false);
+  });
+
+  it("needs the agreement to have been accepted on or after that run date", () => {
+    // Pre, accepted 25 Nov: November (run 20 Oct) and December (run 20 Nov), not January (run 20 Dec).
+    expect(startMonthCatchUpNeeded("2026-11", "PRE", "2026-11-25", "2026-11-25")).toBe(true);
+    expect(startMonthCatchUpNeeded("2026-12", "PRE", "2026-11-25", "2026-11-25")).toBe(true);
+    expect(startMonthCatchUpNeeded("2027-01", "PRE", "2026-11-25", "2026-11-25")).toBe(false);
+    expect(startMonthCatchUpNeeded("2027-01", "PRE", "2026-12-20", "2026-11-25")).toBe(false);
+    // Pre, accepted 10 Nov: December is the run's (20 Nov came after the acceptance).
+    expect(startMonthCatchUpNeeded("2026-12", "PRE", "2026-11-25", "2026-11-10")).toBe(false);
+    // Post, accepted 18 Nov: November is the run's even if it was not pressed yet.
+    expect(startMonthCatchUpNeeded("2026-11", "POST", "2026-11-25", "2026-11-18")).toBe(false);
+    // The 20th itself counts as on or after.
+    expect(startMonthCatchUpNeeded("2026-11", "POST", "2026-11-20", "2026-11-20")).toBe(true);
+    expect(startMonthCatchUpNeeded("2026-11", "POST", "2026-11-20", "2026-11-19")).toBe(false);
+    // Across the year end: January for Pre from an acceptance on 20 December.
+    expect(startMonthCatchUpNeeded("2027-01", "PRE", "2026-12-22", "2026-12-20")).toBe(true);
+    expect(startMonthCatchUpNeeded("2027-01", "PRE", "2026-12-22", "2026-12-19")).toBe(false);
   });
 
   it("lists last month, this month and next month", () => {
@@ -175,21 +193,21 @@ describe("start-month catch-up", () => {
   });
 
   it("works across the year end and in February", () => {
-    expect(startMonthCatchUpNeeded("2026-12", "POST", "2027-01-03")).toBe(true);
-    expect(startMonthCatchUpNeeded("2027-01", "PRE", "2027-01-02")).toBe(true);
-    expect(startMonthCatchUpNeeded("2027-01", "POST", "2027-01-19")).toBe(false);
-    expect(startMonthCatchUpNeeded("2027-02", "POST", "2027-02-20")).toBe(true);
-    expect(startMonthCatchUpNeeded("2027-02", "POST", "2027-03-01")).toBe(true);
-    expect(startMonthCatchUpNeeded("2026-12", "PRE", "2027-02-01")).toBe(false);
+    expect(startMonthCatchUpNeeded("2026-12", "POST", "2027-01-03", "2027-01-03")).toBe(true);
+    expect(startMonthCatchUpNeeded("2027-01", "PRE", "2027-01-02", "2027-01-02")).toBe(true);
+    expect(startMonthCatchUpNeeded("2027-01", "POST", "2027-01-19", "2027-01-19")).toBe(false);
+    expect(startMonthCatchUpNeeded("2027-02", "POST", "2027-02-20", "2027-02-20")).toBe(true);
+    expect(startMonthCatchUpNeeded("2027-02", "POST", "2027-03-01", "2027-03-01")).toBe(true);
+    expect(startMonthCatchUpNeeded("2026-12", "PRE", "2027-02-01", "2027-02-01")).toBe(false);
     // Pre January from 20 December (across the year end), not before.
-    expect(startMonthCatchUpNeeded("2027-01", "PRE", "2026-12-19")).toBe(false);
-    expect(startMonthCatchUpNeeded("2027-01", "PRE", "2026-12-20")).toBe(true);
-    expect(startMonthCatchUpNeeded("2027-01", "POST", "2026-12-28")).toBe(false);
+    expect(startMonthCatchUpNeeded("2027-01", "PRE", "2026-12-19", "2026-12-19")).toBe(false);
+    expect(startMonthCatchUpNeeded("2027-01", "PRE", "2026-12-20", "2026-12-20")).toBe(true);
+    expect(startMonthCatchUpNeeded("2027-01", "POST", "2026-12-28", "2026-12-28")).toBe(false);
   });
 
   it("refuses a month that is not a month", () => {
-    expect(startMonthCatchUpNeeded("2026-13", "PRE", "2026-11-25")).toBe(false);
-    expect(startMonthCatchUpNeeded("", "POST", "2026-11-25")).toBe(false);
+    expect(startMonthCatchUpNeeded("2026-13", "PRE", "2026-11-25", "2026-11-25")).toBe(false);
+    expect(startMonthCatchUpNeeded("", "POST", "2026-11-25", "2026-11-25")).toBe(false);
   });
 
   it("is due a week from today at the earliest, never past a week after the month ends, never in the past", () => {

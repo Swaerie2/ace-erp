@@ -80,7 +80,7 @@ function pageNotice(sp: Search): NoticeText | null {
     const partFailed = n(sp.partFailed);
     return {
       text:
-        `Created ${plural(n(sp.created), "draft")} and ${plural(part, "part-month draft")} (for clients who accepted after the run for their first month). Skipped ${plural(n(sp.skipped), "customer")} (already invoiced for that month, not started yet, nothing to bill, paused, archived or still a lead).` +
+        `Created ${plural(n(sp.created), "draft")} and ${plural(part, "part-month draft")} (for clients who accepted after the run for that month). Skipped ${plural(n(sp.skipped), "customer")} (already invoiced for that month, not started yet, nothing to bill, paused, archived or still a lead).` +
         (failed > 0
           ? ` ${plural(failed, "customer")} could not be drafted: press the button again to retry.`
           : "") +
@@ -181,8 +181,8 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
               : `${partMonth.length} clients need a part-month invoice`}
           </h2>
           <p className="text-sm text-charcoal">
-            These clients accepted after the regular invoice run for their first month, so their
-            first days would not be billed. The invoice is a draft: check it, then issue it.
+            These clients accepted after the regular invoice run for that month, so no run would
+            bill it (often a part month). The invoice is a draft: check it, then issue it.
           </p>
           <ul className="divide-y divide-charcoal/10 rounded-xl bg-white/80 ring-1 ring-charcoal/10">
             {partMonth.map((c) => (

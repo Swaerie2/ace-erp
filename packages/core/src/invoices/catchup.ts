@@ -2,13 +2,13 @@ import { z } from "zod";
 import { assertRole, ForbiddenError, MANAGEMENT, type Actor } from "../customers/access";
 import { lockCustomer } from "../customers/store";
 import type { TxRunner } from "../portal/access";
-import { fromDateString, todaySA } from "../quotes/reference";
+import { fromDateString, toDateString, todaySA } from "../quotes/reference";
 import {
   catchUpDueDate,
   catchUpMonths,
   firstDayOf,
-  lastDayOf,
   monthOf,
+  runDateFor,
   startMonthCatchUpNeeded,
 } from "./dates";
 import { BILLABLE_AGREEMENT, loadAgreements, serviceLinesFor } from "./run";
@@ -24,9 +24,9 @@ export type StartMonthCandidate = {
   customerId: string;
   customerNumber: number;
   customerName: string;
-  /** The property (or properties, joined) whose first agreement starts in the month. */
+  /** The property (or properties, joined) whose agreement was accepted after that month's run date. */
   propertyLabel: string;
-  /** The first service date ("YYYY-MM-DD"). */
+  /** That agreement's first service date ("YYYY-MM-DD"), possibly before the month. */
   firstServiceOn: string;
   /** "YYYY-MM". */
   serviceMonth: string;
@@ -42,8 +42,8 @@ export type StartMonthResult = {
 
 /**
  * The customers that may need a catch-up: an ACTIVE customer that is not anonymised, with a billable agreement
- * starting (or, with no start date, accepted) from the first day of last month to the end of next month. Each
- * one is then checked properly by `planFor`.
+ * accepted on or after the earliest run date a catch-up month can have (the Pre run date of last month). Each
+ * one is then checked properly by `planCustomer`.
  */
 async function candidateCustomers(
   store: InvoiceStore,
@@ -51,27 +51,14 @@ async function candidateCustomers(
   only: string[] | null,
   take?: number,
 ) {
-  const months = catchUpMonths(today);
-  const from = fromDateString(firstDayOf(months[0] ?? monthOf(today)));
+  const earliest = fromDateString(runDateFor(catchUpMonths(today)[0] ?? monthOf(today), "PRE"));
   // A day early: an acceptance just after midnight in South Africa is still the day before in UTC.
-  const acceptedFrom = new Date(from.getTime() - 24 * 60 * 60 * 1000);
+  const acceptedFrom = new Date(earliest.getTime() - 24 * 60 * 60 * 1000);
   return store.quote.findMany({
     where: {
       ...BILLABLE_AGREEMENT,
       customer: { status: "ACTIVE", anonymisedAt: null },
-      AND: [
-        {
-          OR: [
-            {
-              acceptedStartDate: {
-                gte: from,
-                lte: fromDateString(lastDayOf(months[months.length - 1] ?? monthOf(today))),
-              },
-            },
-            { acceptedStartDate: null, acceptedAt: { gte: acceptedFrom } },
-          ],
-        },
-      ],
+      acceptedAt: { gte: acceptedFrom },
       ...(only ? { customerId: { in: only } } : {}),
     },
     distinct: ["customerId"],
@@ -82,19 +69,16 @@ async function candidateCustomers(
 }
 
 /**
- * Whether the customer needs a part-month (catch-up) draft for `serviceMonth`, and what it holds. Null when it
- * does not: the customer is not an active, non-anonymised customer; the month is not last, this or next month
- * or its normal run was not due yet (`startMonthCatchUpNeeded`); a live monthly invoice for the month exists;
- * or no property has its FIRST agreement starting in that month with something priced. The lines are built
- * exactly as the run builds them for that month (every agreement in force, a first agreement pro-rated),
- * with no late fees.
+ * The catch-up drafts one customer needs, oldest month first, and what each holds. A month M (last month,
+ * this month or next month) needs one when ALL hold: the customer is ACTIVE and not anonymised; the normal
+ * run for M is due (`runDateFor`: Pre the 20th of the month before, Post the 20th of M); an agreement in force
+ * for M (the run's own `loadAgreements`, replacements included) with something priced was ACCEPTED (South
+ * African date of `acceptedAt`) on or after that run date, so the run could not have billed it in time; and
+ * no live monthly invoice exists for M. The lines are exactly what the run builds for M (every agreement in
+ * force; only a first agreement starting after the 1st of M is pro-rated), with no late fees. The list and
+ * the create both use this, so the box never shows a client the create would skip.
  */
-async function planFor(
-  store: InvoiceStore,
-  customerId: string,
-  serviceMonth: string,
-  today: string,
-) {
+async function planCustomer(store: InvoiceStore, customerId: string, today: string) {
   const customer = await store.customer.findUnique({
     where: { id: customerId },
     select: {
@@ -108,38 +92,51 @@ async function planFor(
       billsToManager: true,
     },
   });
-  if (!customer || customer.anonymisedAt || customer.status !== "ACTIVE") return null;
-  if (!startMonthCatchUpNeeded(serviceMonth, customer.billingTiming, today)) return null;
-  const existing = await store.invoice.count({
-    where: {
-      customerId,
-      kind: "MONTHLY",
-      status: { not: "VOID" },
-      serviceMonth: fromDateString(firstDayOf(serviceMonth)),
-    },
-  });
-  if (existing > 0) return null;
-  const agreements = await loadAgreements(store, customerId, serviceMonth);
-  // A property's first agreement (nothing started before it) whose first service is in this month.
-  const fresh = agreements.filter((a) => a.partMonth && monthOf(a.start) === serviceMonth);
-  if (fresh.length === 0) return null;
-  const serviceLines = serviceLinesFor(agreements, serviceMonth);
-  const freshProperties = new Set(fresh.map((a) => a.propertyId));
-  if (!serviceLines.some((l) => freshProperties.has(l.propertyId))) return null;
-  return {
-    customer,
-    serviceMonth,
-    serviceLines,
-    propertyLabel: fresh.map((a) => a.property.label).join(", "),
-    firstServiceOn: fresh.map((a) => a.start).sort()[0] ?? firstDayOf(serviceMonth),
-  };
+  if (!customer || customer.anonymisedAt || customer.status !== "ACTIVE") return [];
+  const months = catchUpMonths(today).filter((m) => today >= runDateFor(m, customer.billingTiming));
+  if (months.length === 0) return [];
+  const invoiced = new Set(
+    (
+      await store.invoice.findMany({
+        where: {
+          customerId,
+          kind: "MONTHLY",
+          status: { not: "VOID" },
+          serviceMonth: { in: months.map((m) => fromDateString(firstDayOf(m))) },
+        },
+        select: { serviceMonth: true },
+      })
+    ).flatMap((i) => (i.serviceMonth ? [toDateString(i.serviceMonth).slice(0, 7)] : [])),
+  );
+  const plans = [];
+  for (const serviceMonth of months) {
+    if (invoiced.has(serviceMonth)) continue;
+    const agreements = await loadAgreements(store, customerId, serviceMonth);
+    const serviceLines = serviceLinesFor(agreements, serviceMonth);
+    const priced = new Set(serviceLines.map((l) => l.propertyId));
+    const late = agreements.filter(
+      (a) =>
+        a.acceptedAt !== null &&
+        priced.has(a.propertyId) &&
+        startMonthCatchUpNeeded(serviceMonth, customer.billingTiming, today, todaySA(a.acceptedAt)),
+    );
+    if (late.length === 0) continue;
+    plans.push({
+      customer,
+      serviceMonth,
+      serviceLines,
+      propertyLabel: late.map((a) => a.property.label).join(", "),
+      firstServiceOn: late.map((a) => a.start).sort()[0] ?? firstDayOf(serviceMonth),
+    });
+  }
+  return plans;
 }
 
 /**
- * Clients who need a part-month invoice: their first agreement started after the normal invoice run for that
- * month (Pre: the run on the 20th of the month before; Post: the 20th of the month), so no run bills those
- * first days. Last month, this month and next month only (next month: Pre clients from the 20th), at most 200
- * rows. Read only: nothing is written.
+ * Clients who need a catch-up (often part-month) invoice: they accepted after the normal invoice run for that
+ * month (Pre: the run on the 20th of the month before; Post: the 20th of the month), so no run bills it. Last
+ * month, this month and next month only (next month: Pre clients from the 20th), one row per client and
+ * month, at most 200 rows. Read only: nothing is written.
  */
 export async function listStartMonthCandidates(
   store: InvoiceStore,
@@ -150,10 +147,8 @@ export async function listStartMonthCandidates(
   const rows = await candidateCustomers(store, today, null, MAX_CANDIDATES);
   const out: StartMonthCandidate[] = [];
   for (const row of rows) {
-    for (const month of catchUpMonths(today)) {
+    for (const plan of await planCustomer(store, row.customerId, today)) {
       if (out.length >= MAX_CANDIDATES) return out;
-      const plan = await planFor(store, row.customerId, month, today);
-      if (!plan) continue;
       out.push({
         customerId: plan.customer.id,
         customerNumber: plan.customer.number,
@@ -176,11 +171,10 @@ async function catchUpCustomer(
   today: string,
 ): Promise<StartMonthResult["created"]> {
   const created: StartMonthResult["created"] = [];
-  for (const month of catchUpMonths(today)) {
-    if (!(await planFor(tx, customerId, month, today))) continue;
-    await lockCustomer(tx, customerId);
-    const plan = await planFor(tx, customerId, month, today);
-    if (!plan) continue;
+  if ((await planCustomer(tx, customerId, today)).length === 0) return created;
+  await lockCustomer(tx, customerId);
+  for (const plan of await planCustomer(tx, customerId, today)) {
+    const month = plan.serviceMonth;
     const lines = plan.serviceLines.filter((l) => l.amountCents > 0);
     const invoice = await tx.invoice.create({
       data: {
@@ -205,7 +199,7 @@ async function catchUpCustomer(
 }
 
 /**
- * "Create part-month invoices": a DRAFT for each client in `listStartMonthCandidates` (or only these customer
+ * "Create part-month invoices": the DRAFTS for each client in `listStartMonthCandidates` (or only these customer
  * ids; ids that are not UUIDs are ignored), each customer in its own transaction, so one failure never blocks
  * the rest and never throws. Idempotent: a live monthly invoice for the month stops a second one (the partial
  * unique index backs this up). The monthly run itself is unchanged; the staff app calls this after it.

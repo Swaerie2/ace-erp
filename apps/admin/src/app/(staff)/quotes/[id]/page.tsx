@@ -32,7 +32,9 @@ import { QuoteFacts } from "./quote-facts";
 const NOTICES: Record<string, string> = {
   paused: "Accepted. The customer is paused, so they were not made active. Check the customer.",
   archived: "Accepted. The customer is archived and was left unchanged. Check the customer.",
-  "part-month": "Accepted. A part-month invoice draft was created: see Invoices.",
+  "catchup-1": "Accepted. 1 invoice draft was created for this client: see Invoices.",
+  "catchup-2":
+    "Accepted. 2 invoice drafts were created for this client, one per month: see Invoices.",
   cannot:
     "That could not be done. The quote may have changed. Check its status below and try again.",
 };

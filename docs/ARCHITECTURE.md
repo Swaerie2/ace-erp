@@ -440,20 +440,23 @@ These apply to every module. A module is not finished until it follows all of th
   invoice with a balance and no fee yet gets a suggested late payment fee line (amount in settings, 0
   switches it off). Running it twice makes no duplicates (a partial unique index guards it). It is one
   function, so a later automatic switch can call it.
-- **Start-month catch-up (part-month invoices).** The run bills Pre clients a month ahead, so a client whose
-  first agreement starts in a month whose run has already been (Pre: the 20th of the month before; Post:
-  the 20th of the month) would never be billed for those first days. `catchup.ts` finds these clients
-  (only a property's first agreement, starting last month, this month or next month: older months are
-  never caught up, and next month only for Pre clients from the 20th) that have no live monthly invoice for
-  that month, and makes a DRAFT for that month with the lines
-  the run would build (the part month charged by days, no late fees). It is due a week from today or on
-  the normal due date if later, never more than a week after that month ends and never before today. It
-  happens when staff record an acceptance in the staff app (after the acceptance has committed; a failure
-  never undoes the acceptance), from the box "N clients need a part-month invoice" on the Invoices page
-  (for clients who accepted in the portal or on the client link), and after every "Create this month's
-  invoices". The portal never creates invoices: its database login has no rights on the invoice tables.
-  A monthly draft whose month before has no live invoice (for example after a switch from Post to Pre)
-  carries the warning "No invoice exists for <month>".
+- **Catch-up invoices (often a part month).** A client who accepts after the regular run for a month was
+  due (Pre: the 20th of the month before; Post: the 20th of the month) is billed for that month by no run.
+  `catchup.ts` makes a DRAFT for each month M that is last month, this month or next month where: the run
+  date for M has come; an agreement in force for M (the run's own rules, replacements included) with
+  something priced was accepted (South African date) on or after that run date; and the customer is
+  active and has no live monthly invoice for M. The lines are what the run would build for M, with no late
+  fees: only a first agreement starting after the 1st of M is charged by days, a replacement is billed for
+  the whole month at its new price. Example: Pre, accepted 25 Nov, first service 27 Nov: a November part
+  month and a full December at once (January is the December run's). Older months are never caught up. It
+  is due a week from today or on the normal due date if later, never more than a week after that month ends
+  and never before today. It happens when staff record an acceptance in the staff app (after the acceptance
+  has committed; a failure never undoes the acceptance), from the box "N clients need a part-month invoice"
+  on the Invoices page (for clients who accepted in the portal or on the client link), and after every
+  "Create this month's invoices"; the run pressed later skips a month already caught up. The portal never
+  creates invoices: its database login has no rights on the invoice tables. A monthly draft whose month
+  before has no live invoice (for example after a switch from Post to Pre) carries the warning "No invoice
+  exists for <month>".
 - **Issue.** Gives the number `INV-<year>-<0001>` from an atomic yearly counter, freezes the recipient (the
   bill-to customer: the agency when the complex's bills go to it), ACE's bank and company details
   (including the address) and the total, and stores a fingerprint (`contentHash`). "Issue all drafts" does
@@ -494,10 +497,12 @@ These apply to every module. A module is not finished until it follows all of th
 - Only void-and-reissue corrects an issued invoice; there are no credit notes.
 - The run skips a client who is paused when it runs but cannot know about a pause part way through the
   month; the owner reviews the drafts.
-- A first month whose run had already been is caught up only for last month, this month and next month (see
-  Start-month catch-up); an older one is not charged automatically. A new property added for a client who already has
-  that month's invoice is not caught up either (one monthly invoice per month): add its part month to the
-  next draft by hand.
+- Only last month, this month and next month are caught up (see Catch-up invoices); an older month is not
+  charged automatically. A new property whose agreement is accepted after the run, for a client that already
+  has that month's invoice (from its other properties), is not caught up: only one monthly invoice per
+  client and month is allowed, so the box cannot list it. Its days in that month (often a part month) are
+  billed by nobody: staff add a line for them to that invoice (if still a draft) or to the next draft by
+  hand.
 - The late fee suggestion on a draft looks at the overdue invoices of the customer being invoiced (the
   complex), not at everything its agency owes. The owner reviews the fee line.
 - Statements are on demand only and are not emailed; credit on account is shown but never refunded or

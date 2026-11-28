@@ -239,27 +239,29 @@ export async function acceptQuoteAction(_prev: FormState, formData: FormData): P
   // The acceptance has committed: portal access and the welcome emails follow after the response.
   grantPortalAccessLater(id.data);
   if (flag) redirect(`/quotes/${id.data}?notice=${flag.toLowerCase()}`);
-  const partMonth = await partMonthDraftAfterAcceptance(actor, id.data);
-  redirect(partMonth ? `/quotes/${id.data}?notice=part-month` : `/quotes/${id.data}`);
+  const drafts = await catchUpDraftsAfterAcceptance(actor, id.data);
+  // Fixed codes only: one draft, or two (this month and next month; more cannot happen at acceptance).
+  const code = drafts === 0 ? null : drafts === 1 ? "catchup-1" : "catchup-2";
+  redirect(code ? `/quotes/${id.data}?notice=${code}` : `/quotes/${id.data}`);
 }
 
 /**
- * After an acceptance has committed (outside its transaction): a part-month invoice draft for the customer
- * when the run for the first month has already been, so those first days are billed. It can never fail the
- * acceptance: any problem is logged with fixed words only. True when a draft was created.
+ * After an acceptance has committed (outside its transaction): the catch-up drafts for the customer, one per
+ * month whose regular run came before this acceptance (at acceptance: this month and, for Pre, next month).
+ * It can never fail the acceptance: any problem is logged with fixed words only. Returns how many were made.
  */
-async function partMonthDraftAfterAcceptance(actor: Actor, quoteId: string): Promise<boolean> {
+async function catchUpDraftsAfterAcceptance(actor: Actor, quoteId: string): Promise<number> {
   try {
     const quote = await getQuote(getDb(), actor, quoteId);
-    if (!quote) return false;
+    if (!quote) return 0;
     const result = await createStartMonthDrafts(getDb(), actor, {
       run: inTx,
       only: [quote.customerId],
     });
-    return result.created.length > 0;
+    return result.created.length;
   } catch {
     console.error("A part-month invoice draft could not be made after an acceptance.");
-    return false;
+    return 0;
   }
 }
 
