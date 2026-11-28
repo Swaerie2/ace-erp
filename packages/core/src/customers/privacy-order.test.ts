@@ -6,7 +6,7 @@ import type { Store } from "./store";
 const owner: Actor = { id: "owner-1", role: "OWNER" };
 const ID = "11111111-1111-4111-8111-111111111111";
 
-type Where = { id?: string; customerId?: string; anonymisedAt?: null };
+type Where = Record<string, unknown>;
 type Data = Record<string, unknown>;
 
 /** A recording stand-in for the database. Only what anonymiseCustomer touches. */
@@ -46,6 +46,16 @@ function fakeStore(
     },
     property: { updateMany: record("property.updateMany") },
     quote: { updateMany: record("quote.updateMany") },
+    invoice: {
+      deleteMany: record("invoice.deleteMany"),
+      updateMany: record("invoice.updateMany"),
+    },
+    invoiceLine: {
+      deleteMany: record("invoiceLine.deleteMany"),
+      updateMany: record("invoiceLine.updateMany"),
+    },
+    payment: { updateMany: record("payment.updateMany") },
+    paymentReport: { updateMany: record("paymentReport.updateMany") },
     portalSession: { deleteMany: record("portalSession.deleteMany") },
     portalCode: { deleteMany: record("portalCode.deleteMany") },
     auditLog: { create: record("auditLog.create") },
@@ -115,5 +125,41 @@ describe("anonymiseCustomer write order", () => {
     expect(calls.find((c) => c.op === "portalSession.deleteMany")?.where).toEqual({
       email: "zz.person@example.com",
     });
+  });
+
+  it("deletes drafts and scrubs invoices, payments and reports before the customer row is marked", async () => {
+    const { store, calls } = fakeStore();
+    await anonymiseCustomer(store, owner, ID, "C-0007");
+    const ops = calls.map((c) => c.op);
+    const scrubIndex = calls.findIndex((c) => c.data && "anonymisedAt" in c.data);
+    for (const op of [
+      "invoiceLine.deleteMany",
+      "invoice.deleteMany",
+      "invoiceLine.updateMany",
+      "invoice.updateMany",
+      "payment.updateMany",
+      "paymentReport.updateMany",
+    ]) {
+      expect(ops, op).toContain(op);
+      expect(ops.lastIndexOf(op), op).toBeLessThan(scrubIndex);
+    }
+    // Draft lines go before their drafts (the foreign key would refuse the other way round).
+    expect(ops.indexOf("invoiceLine.deleteMany")).toBeLessThan(ops.indexOf("invoice.deleteMany"));
+    const invoiceScrub = calls.find((c) => c.op === "invoice.updateMany");
+    expect(invoiceScrub?.data).toEqual({
+      recipientName: null,
+      recipientAddress: null,
+      voidReason: null,
+    });
+    expect(calls.find((c) => c.op === "payment.updateMany")?.data).toEqual({
+      reference: null,
+      note: null,
+      voidReason: null,
+    });
+    expect(calls.find((c) => c.op === "paymentReport.updateMany")?.data).toEqual({
+      reference: null,
+    });
+    // One line-wording update per line kind.
+    expect(ops.filter((op) => op === "invoiceLine.updateMany")).toHaveLength(5);
   });
 });

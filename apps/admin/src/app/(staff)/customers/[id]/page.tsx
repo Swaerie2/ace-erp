@@ -6,6 +6,7 @@ import {
   getDb,
   getPropertyAgreement,
   listCustomerActivity,
+  listCustomerInvoices,
   listQuotes,
   searchAgencies,
 } from "@ace/core";
@@ -19,6 +20,7 @@ import { activateCustomerAction } from "../actions";
 import { ActivityTab } from "./activity-tab";
 import { ContactsTab } from "./contacts-tab";
 import { CrewView } from "./crew-view";
+import { InvoicesTab } from "./invoices-tab";
 import { OverviewTab } from "./overview-tab";
 import { PropertiesTab } from "./properties-tab";
 import { QuotesTab } from "./quotes-tab";
@@ -31,8 +33,9 @@ type Search = {
   error?: Param;
   agencyQ?: Param;
   link?: Param;
+  notice?: Param;
 };
-const TABS = ["overview", "contacts", "properties", "quotes", "activity"] as const;
+const TABS = ["overview", "contacts", "properties", "quotes", "invoices", "activity"] as const;
 type Tab = (typeof TABS)[number];
 
 export default async function CustomerPage({
@@ -61,9 +64,10 @@ export default async function CustomerPage({
   const tab: Tab = TABS.find((t) => t === first(sp.tab)) ?? "overview";
   const edit = first(sp.edit);
   const add = first(sp.add);
-  const notice = first(sp.error);
+  const contactNotice = first(sp.error);
   const agencyQuery = (first(sp.agencyQ) ?? "").slice(0, 80);
   const linkNotice = first(sp.link);
+  const notice = first(sp.notice);
 
   return (
     <div>
@@ -124,7 +128,7 @@ export default async function CustomerPage({
             linkNotice={linkNotice}
           />
         ) : tab === "contacts" ? (
-          <ContactsTab customer={customer} edit={edit} add={add === "1"} notice={notice} />
+          <ContactsTab customer={customer} edit={edit} add={add === "1"} notice={contactNotice} />
         ) : tab === "properties" ? (
           <PropertiesTab
             customer={customer}
@@ -144,6 +148,14 @@ export default async function CustomerPage({
             customerName={customer.displayName}
             result={await listQuotes(getDb(), actor, { customerId: id, pageSize: 50 })}
             canQuote={customer.status !== "ARCHIVED" && !customer.anonymisedAt}
+          />
+        ) : tab === "invoices" ? (
+          <InvoicesTab
+            customerId={id}
+            billingTiming={customer.billingTiming}
+            locked={customer.status === "ARCHIVED" || Boolean(customer.anonymisedAt)}
+            data={await listCustomerInvoices(getDb(), actor, id)}
+            notice={notice}
           />
         ) : (
           <ActivityTab entries={await listCustomerActivity(getDb(), actor, id)} />

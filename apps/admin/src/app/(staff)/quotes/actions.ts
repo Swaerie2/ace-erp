@@ -7,6 +7,7 @@ import {
   createCustomer,
   createQuote,
   createQuoteLink,
+  createStartMonthDrafts,
   customerSchema,
   declineQuote,
   declineSchema,
@@ -14,6 +15,8 @@ import {
   DraftConflictError,
   draftSchema,
   findDuplicateContacts,
+  getDb,
+  getQuote,
   inTx,
   issueQuote,
   MANAGEMENT,
@@ -25,6 +28,7 @@ import {
   saveDraft,
   SENT_METHODS,
   withdrawQuote,
+  type Actor,
 } from "@ace/core";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -234,7 +238,31 @@ export async function acceptQuoteAction(_prev: FormState, formData: FormData): P
   }
   // The acceptance has committed: portal access and the welcome emails follow after the response.
   grantPortalAccessLater(id.data);
-  redirect(flag ? `/quotes/${id.data}?notice=${flag.toLowerCase()}` : `/quotes/${id.data}`);
+  if (flag) redirect(`/quotes/${id.data}?notice=${flag.toLowerCase()}`);
+  const drafts = await catchUpDraftsAfterAcceptance(actor, id.data);
+  // Fixed codes only: one draft, or several (one per month that was missed).
+  const code = drafts === 0 ? null : drafts === 1 ? "catchup-1" : "catchup-2";
+  redirect(code ? `/quotes/${id.data}?notice=${code}` : `/quotes/${id.data}`);
+}
+
+/**
+ * After an acceptance has committed (outside its transaction): the catch-up drafts for the customer, one per
+ * month whose regular run came before this acceptance (at acceptance: this month and, for Pre, next month).
+ * It can never fail the acceptance: any problem is logged with fixed words only. Returns how many were made.
+ */
+async function catchUpDraftsAfterAcceptance(actor: Actor, quoteId: string): Promise<number> {
+  try {
+    const quote = await getQuote(getDb(), actor, quoteId);
+    if (!quote) return 0;
+    const result = await createStartMonthDrafts(getDb(), actor, {
+      run: inTx,
+      only: [quote.customerId],
+    });
+    return result.created.length;
+  } catch {
+    console.error("A part-month invoice draft could not be made after an acceptance.");
+    return 0;
+  }
 }
 
 export async function declineQuoteAction(_prev: FormState, formData: FormData): Promise<FormState> {

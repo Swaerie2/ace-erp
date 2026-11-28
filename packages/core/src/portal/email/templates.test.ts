@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  INVOICE_SUBJECT,
+  INVOICES_SUBJECT,
   SIGN_IN_SUBJECT,
   WELCOME_SUBJECT,
   escapeHtml,
+  invoiceEmail,
   signInCodeEmail,
   welcomeEmail,
 } from "./templates";
@@ -54,5 +57,64 @@ describe("escapeHtml", () => {
     expect(escapeHtml(`<a href="x">'&'</a>`)).toBe(
       "&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;",
     );
+  });
+});
+
+describe("invoiceEmail", () => {
+  const bank = {
+    bankName: "ZZ Test Bank",
+    accountHolder: "ACE Garden Services",
+    accountNumber: "1234567890",
+    branchCode: "250655",
+    accountType: "Business cheque",
+  };
+  it("lists the invoices with the payment reference and bank details, under a fixed subject", () => {
+    const one = invoiceEmail({
+      to: "zz.client@example.com",
+      invoices: [
+        {
+          reference: "INV-2026-0001",
+          forName: null,
+          amountLabel: "R1,150.00",
+          dueDateLabel: "30 Nov 2026",
+        },
+      ],
+      paymentReference: "C-0123",
+      bank,
+    });
+    expect(one.subject).toBe(INVOICE_SUBJECT);
+    expect(one.to).toBe("zz.client@example.com");
+    expect(one.text).toContain("INV-2026-0001: R1,150.00, due 30 Nov 2026");
+    expect(one.text).toContain("C-0123");
+    expect(one.text).toContain("Account number: 1234567890");
+    expect(one.text).toContain("not VAT registered");
+    const two = invoiceEmail({
+      to: "zz.agency@example.com",
+      invoices: [
+        {
+          reference: "INV-2026-0001",
+          forName: "ZZ <Complex> A",
+          amountLabel: "R1.00",
+          dueDateLabel: "30 Nov 2026",
+        },
+        {
+          reference: "INV-2026-0002",
+          forName: "ZZ Complex B",
+          amountLabel: "R2.00",
+          dueDateLabel: "30 Nov 2026",
+        },
+      ],
+      paymentReference: "C-0099",
+      bank: null,
+    });
+    expect(two.subject).toBe(INVOICES_SUBJECT);
+    expect(two.text).toContain("INV-2026-0001 (ZZ <Complex> A): R1.00");
+    expect(two.html).toContain("ZZ &lt;Complex&gt; A");
+    expect(two.html).not.toContain("<Complex>");
+    for (const m of [one, two]) {
+      expect(m.subject).not.toContain("example.com");
+      expect(m.text).not.toContain(EM_DASH);
+      expect(m.html).not.toContain(EM_DASH);
+    }
   });
 });

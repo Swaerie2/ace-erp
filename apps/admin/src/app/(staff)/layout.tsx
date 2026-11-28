@@ -22,6 +22,19 @@ export default async function StaffLayout({ children }: { children: React.ReactN
               </Link>
             ) : null}
             {MANAGEMENT.includes(staff.role) ? (
+              <>
+                <Link href="/invoices" className="text-charcoal/80 hover:text-forest">
+                  Invoices
+                </Link>
+                <Link href="/payments" className="text-charcoal/80 hover:text-forest">
+                  Payments
+                </Link>
+                <Link href="/statements" className="text-charcoal/80 hover:text-forest">
+                  Statements
+                </Link>
+              </>
+            ) : null}
+            {MANAGEMENT.includes(staff.role) ? (
               <Link href="/services" className="text-charcoal/80 hover:text-forest">
                 Services
               </Link>
@@ -29,6 +42,16 @@ export default async function StaffLayout({ children }: { children: React.ReactN
             {staff.role === "OWNER" ? (
               <Link href="/settings/quote-wording" className="text-charcoal/80 hover:text-forest">
                 Quote wording
+              </Link>
+            ) : null}
+            {staff.role === "OWNER" ? (
+              <Link href="/settings/invoices" className="text-charcoal/80 hover:text-forest">
+                Invoice settings
+              </Link>
+            ) : null}
+            {staff.role === "OWNER" ? (
+              <Link href="/settings/company" className="text-charcoal/80 hover:text-forest">
+                Company profile
               </Link>
             ) : null}
           </nav>

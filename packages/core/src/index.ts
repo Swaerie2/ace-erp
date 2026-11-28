@@ -3,8 +3,14 @@ export * from "./portal-db";
 export type { Db } from "./db";
 export { getDatabaseUrl, requireEnv } from "./env";
 export { getPortalBaseUrl, portalSignInUrl } from "./portal/config";
-export { sendEmail, type EmailMessage } from "./portal/email/send";
-export { signInCodeEmail, welcomeEmail } from "./portal/email/templates";
+export { sendEmail, type EmailAttachment, type EmailMessage } from "./portal/email/send";
+export {
+  INVOICE_SUBJECT,
+  INVOICES_SUBJECT,
+  invoiceEmail,
+  signInCodeEmail,
+  welcomeEmail,
+} from "./portal/email/templates";
 export {
   HIERARCHY_MESSAGES,
   clearManagedBy,
@@ -38,3 +44,5 @@ export { AuditActorType, StaffRole } from "./generated/prisma/enums";
 export * from "./customers";
 export * from "./services";
 export * from "./quotes";
+export * from "./invoices";
+export * from "./company";

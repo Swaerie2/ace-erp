@@ -125,3 +125,54 @@ describe("sendEmail", () => {
     expect((error as Error).message).not.toContain("example.com");
   });
 });
+
+describe("attachments", () => {
+  const prod = env({
+    NODE_ENV: "production",
+    RESEND_API_KEY: "re_test",
+    EMAIL_FROM: "ACE <noreply@example.com>",
+  });
+  const pdf = { filename: "INV-2026-0001.pdf", content: new Uint8Array([37, 80, 68, 70]) };
+
+  it("sends attachments to Resend as base64", async () => {
+    const fetchImpl = vi.fn(async () => new Response("{}", { status: 200 }));
+    await sendEmail(
+      { ...message, attachments: [pdf] },
+      { env: prod, fetchImpl: fetchImpl as unknown as typeof fetch },
+    );
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body)).attachments).toEqual([
+      { filename: "INV-2026-0001.pdf", content: "JVBERg==" },
+    ]);
+  });
+
+  it("refuses unsafe names, too many files and too many bytes before anything is sent", async () => {
+    const fetchImpl = vi.fn();
+    const send = (attachments: { filename: string; content: Uint8Array }[]) =>
+      sendEmail(
+        { ...message, attachments },
+        { env: prod, fetchImpl: fetchImpl as unknown as typeof fetch },
+      );
+    await expect(send([{ ...pdf, filename: "../x.pdf" }])).rejects.toThrow(
+      "An email attachment name is not allowed.",
+    );
+    await expect(send(Array.from({ length: 21 }, () => pdf))).rejects.toThrow(
+      "Too many email attachments.",
+    );
+    await expect(
+      send([{ filename: "big.pdf", content: new Uint8Array(15 * 1024 * 1024 + 1) }]),
+    ).rejects.toThrow("The email attachments are too large.");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("in development prints the attachment names and sizes, never the content", async () => {
+    const log = vi.fn();
+    await sendEmail(
+      { ...message, attachments: [pdf] },
+      { env: env({ NODE_ENV: "development" }), log },
+    );
+    const text = String(log.mock.calls[0]?.[0]);
+    expect(text).toContain("Attachments: INV-2026-0001.pdf (1 KB)");
+    expect(text).not.toContain("JVBERg");
+  });
+});

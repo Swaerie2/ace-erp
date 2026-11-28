@@ -31,6 +31,7 @@ const CUSTOMER: Record<string, Rule> = {
   consentNote: "scrubbed",
   managedById: "scrubbed",
   billsToManager: "kept: yes/no setting, who bills go to",
+  billingTiming: "kept: enum (pre or post billing), not personal",
   archivedAt: "kept: timestamp",
   anonymisedAt: "kept: timestamp, set by the scrub itself",
   createdById: "kept: staff id, not about the customer",
@@ -172,6 +173,110 @@ const PORTAL_SESSION: Record<string, Rule> = {
   absoluteExpiresAt: "kept: timestamp",
 };
 
+// Module 5. Financial records are kept on anonymise (numbers, dates, amounts, allocations); the frozen
+// recipient, typed references, notes and reasons are scrubbed, and line wording is replaced by a fixed word.
+const INVOICE: Record<string, Rule> = {
+  id: "kept: identifier",
+  customerId: "kept: identifier",
+  billToCustomerId: "kept: identifier",
+  kind: "kept: enum (monthly or once-off)",
+  serviceMonth: "kept: month the service was for",
+  status: "kept: enum, not personal",
+  numberYear: "kept: part of the invoice number",
+  numberSeq: "kept: part of the invoice number",
+  dueDate: "kept: date the invoice was due",
+  issuedAt: "kept: timestamp",
+  issuedById: "kept: staff id, not about the customer",
+  createdAt: "kept: timestamp",
+  createdById: "kept: staff id, not about the customer",
+  draftVersion: "kept: whole number",
+  sourceQuoteId: "kept: identifier",
+  totalCents: "kept: money, the accounts must still add up",
+  recipientName: "scrubbed",
+  recipientAddress: "scrubbed",
+  bankSnapshot: "kept: ACE's own bank and business details, nothing about the customer",
+  contentHash: "kept: fingerprint, cannot be turned back into the content",
+  emailStatus: "kept: enum (none, sent, failed)",
+  emailedAt: "kept: timestamp",
+  voidedAt: "kept: timestamp",
+  voidReason: "scrubbed",
+  voidedById: "kept: staff id, not about the customer",
+};
+
+const INVOICE_LINE: Record<string, Rule> = {
+  id: "kept: identifier",
+  invoiceId: "kept: identifier",
+  sortOrder: "kept: whole number",
+  propertyId: "kept: identifier (the property row itself is scrubbed)",
+  kind: "kept: enum (service, late fee...)",
+  description: "scrubbed",
+  amountCents: "kept: money, the accounts must still add up",
+  sourceQuoteLineId: "kept: identifier",
+  forInvoiceId: "kept: identifier",
+};
+
+const PAYMENT: Record<string, Rule> = {
+  id: "kept: identifier",
+  payerCustomerId: "kept: identifier",
+  receivedOn: "kept: date the money arrived",
+  amountCents: "kept: money, the accounts must still add up",
+  reference: "scrubbed",
+  note: "scrubbed",
+  recordedById: "kept: staff id, not about the customer",
+  createdAt: "kept: timestamp",
+  voidedAt: "kept: timestamp",
+  voidReason: "scrubbed",
+  voidedById: "kept: staff id, not about the customer",
+};
+
+const PAYMENT_ALLOCATION: Record<string, Rule> = {
+  id: "kept: identifier",
+  paymentId: "kept: identifier",
+  invoiceId: "kept: identifier",
+  amountCents: "kept: money, the accounts must still add up",
+};
+
+const PAYMENT_REPORT: Record<string, Rule> = {
+  id: "kept: identifier",
+  invoiceId: "kept: identifier",
+  reportedByContactId: "kept: identifier (the contact row itself is scrubbed)",
+  paidOn: "kept: date the client said they paid",
+  reference: "scrubbed",
+  status: "kept: enum (waiting, confirmed, dismissed)",
+  createdAt: "kept: timestamp",
+  resolvedAt: "kept: timestamp",
+  resolvedById: "kept: staff id, not about the customer",
+};
+
+// ACE's own settings and counters: nothing about any customer.
+const INVOICE_SETTINGS: Record<string, Rule> = {
+  id: "kept: fixed singleton key",
+  bankName: "kept: ACE's own bank details",
+  accountHolder: "kept: ACE's own bank details",
+  accountNumber: "kept: ACE's own bank details",
+  branchCode: "kept: ACE's own bank details",
+  accountType: "kept: ACE's own bank details",
+  onceOffDueDays: "kept: whole number setting",
+  lateFeeCents: "kept: money setting",
+  updatedAt: "kept: timestamp",
+  updatedById: "kept: staff id, not about the customer",
+};
+
+const INVOICE_COUNTER: Record<string, Rule> = {
+  year: "kept: year number",
+  lastSeq: "kept: whole number",
+};
+
+// The company logo: ACE's own image, nothing about any customer.
+const COMPANY_LOGO: Record<string, Rule> = {
+  id: "kept: fixed singleton key",
+  data: "kept: ACE's own logo image, nothing about any customer",
+  contentType: "kept: image type (png or jpeg)",
+  byteSize: "kept: whole number, size of the image",
+  updatedAt: "kept: timestamp",
+  updatedById: "kept: staff id, not about the customer",
+};
+
 function check(name: string, columns: Record<string, string>, table: Record<string, Rule>) {
   describe(name, () => {
     const actual = Object.values(columns).sort();
@@ -195,4 +300,12 @@ describe("personal data coverage", () => {
   check("quote lines", Prisma.QuoteLineScalarFieldEnum, QUOTE_LINE);
   check("portal codes", Prisma.PortalCodeScalarFieldEnum, PORTAL_CODE);
   check("portal sessions", Prisma.PortalSessionScalarFieldEnum, PORTAL_SESSION);
+  check("invoices", Prisma.InvoiceScalarFieldEnum, INVOICE);
+  check("invoice lines", Prisma.InvoiceLineScalarFieldEnum, INVOICE_LINE);
+  check("payments", Prisma.PaymentScalarFieldEnum, PAYMENT);
+  check("payment allocations", Prisma.PaymentAllocationScalarFieldEnum, PAYMENT_ALLOCATION);
+  check("payment reports", Prisma.PaymentReportScalarFieldEnum, PAYMENT_REPORT);
+  check("invoice settings", Prisma.InvoiceSettingsScalarFieldEnum, INVOICE_SETTINGS);
+  check("invoice counters", Prisma.InvoiceCounterScalarFieldEnum, INVOICE_COUNTER);
+  check("company logo", Prisma.CompanyLogoScalarFieldEnum, COMPANY_LOGO);
 });

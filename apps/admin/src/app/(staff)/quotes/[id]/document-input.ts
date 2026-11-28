@@ -50,7 +50,19 @@ export async function loadDocument(quote: Quote, actor: Actor) {
     };
   } else {
     const db = getDb();
-    const org = await db.organisationSettings.findUniqueOrThrow({ where: { id: "singleton" } });
+    const org = await db.organisationSettings.findUniqueOrThrow({
+      where: { id: "singleton" },
+      select: {
+        legalName: true,
+        tradingName: true,
+        vatEnabled: true,
+        addressLine1: true,
+        addressLine2: true,
+        addressSuburb: true,
+        addressCity: true,
+        addressPostalCode: true,
+      },
+    });
     wording = snapshotWording(await getQuoteWording(db, actor), lines, org);
     const customer = await getCustomer(db, actor, quote.customerId);
     const contact =

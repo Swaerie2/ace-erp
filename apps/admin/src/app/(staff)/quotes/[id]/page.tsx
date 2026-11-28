@@ -15,6 +15,7 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 import { toActor } from "@/lib/actor";
 import { requireStaff } from "@/lib/auth";
+import { logoSrcFor } from "@/lib/invoice-pdf";
 import { getPortalUrl } from "@/lib/portal-url";
 import { first } from "@/lib/search-params";
 import { deleteDraftAction } from "../actions";
@@ -31,6 +32,9 @@ import { QuoteFacts } from "./quote-facts";
 const NOTICES: Record<string, string> = {
   paused: "Accepted. The customer is paused, so they were not made active. Check the customer.",
   archived: "Accepted. The customer is archived and was left unchanged. Check the customer.",
+  "catchup-1": "Accepted. 1 invoice draft was created for this client: see Invoices.",
+  "catchup-2":
+    "Accepted. Invoice drafts were created for this client, one per month that was missed: see Invoices.",
   cannot:
     "That could not be done. The quote may have changed. Check its status below and try again.",
 };
@@ -73,10 +77,23 @@ export default async function QuotePage({
     );
   }
   const { doc } = await loadDocument(quote, actor);
+  const logoSrc = await logoSrcFor(actor);
 
   if (quote.status === "DRAFT") {
     const db = getDb();
-    const org = await db.organisationSettings.findUniqueOrThrow({ where: { id: "singleton" } });
+    const org = await db.organisationSettings.findUniqueOrThrow({
+      where: { id: "singleton" },
+      select: {
+        legalName: true,
+        tradingName: true,
+        vatEnabled: true,
+        addressLine1: true,
+        addressLine2: true,
+        addressSuburb: true,
+        addressCity: true,
+        addressPostalCode: true,
+      },
+    });
     const { updatedAt, ...wording } = await getQuoteWording(db, actor);
     void updatedAt;
     const revisionOf = quote.revisionOfId ? await getQuote(db, actor, quote.revisionOfId) : null;
@@ -111,7 +128,9 @@ export default async function QuotePage({
       },
       preparedFor: doc.preparedFor,
       wording,
-      org: { legalName: org.legalName, tradingName: org.tradingName, vatEnabled: org.vatEnabled },
+      // The address columns too, so the draft preview shows the company address as the issued quote will.
+      org,
+      logoSrc,
       today: todaySA(),
     };
     return <QuoteBuilder initial={initial} />;
@@ -175,7 +194,7 @@ export default async function QuotePage({
       </div>
 
       <div className="mt-6">
-        <QuoteDocumentView doc={doc} />
+        <QuoteDocumentView doc={doc} logoSrc={logoSrc} />
       </div>
 
       <h2 className="mt-10 font-display text-lg font-semibold text-forest">History</h2>

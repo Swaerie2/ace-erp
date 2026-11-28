@@ -67,7 +67,18 @@ export type BuilderInitial = {
     email: string;
     website: string;
   };
-  org: { legalName: string; tradingName: string; vatEnabled: boolean };
+  org: {
+    legalName: string;
+    tradingName: string;
+    vatEnabled: boolean;
+    addressLine1: string;
+    addressLine2: string;
+    addressSuburb: string;
+    addressCity: string;
+    addressPostalCode: string;
+  };
+  /** "/company-logo?v=<version>", or null when there is no logo. */
+  logoSrc: string | null;
   today: string;
 };
 

@@ -1,7 +1,6 @@
 import { checkRateLimit, getPortalDb } from "@ace/core";
 import { getPortalQuote, needsWelcome } from "@ace/core/portal";
-import { QuotePdf } from "@ace/ui/quote-pdf";
-import { renderToBuffer } from "@react-pdf/renderer";
+import { renderQuotePdf } from "@/lib/logo";
 import { getSession } from "@/lib/session";
 import { getVisitor } from "@/lib/visitor";
 
@@ -29,10 +28,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   // The scope is enforced inside the query: a quote that is not the person's is the same 404.
   const quote = await getPortalQuote(db, session.scope, id);
   if (!quote) return notFound();
-  // Called as a function so the element is typed as the Document renderToBuffer expects.
-  const buffer = await renderToBuffer(QuotePdf({ doc: quote.doc }));
+  // With the company logo when there is one; a bad logo falls back to a PDF without it.
+  const bytes = await renderQuotePdf(quote.doc);
   const filename = `${quote.reference.replace(/[^A-Za-z0-9._-]+/g, "-")}.pdf`;
-  return new Response(new Uint8Array(buffer), {
+  return new Response(bytes, {
     headers: {
       ...NO_STORE,
       "Content-Type": "application/pdf",

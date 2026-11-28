@@ -1,9 +1,12 @@
 import { CODE_TTL_MINUTES } from "../codes";
+import { NOT_VAT_REGISTERED } from "../../invoices/labels";
 import type { EmailMessage } from "./send";
 
 // Subject lines carry nothing personal.
 export const SIGN_IN_SUBJECT = "Your ACE sign-in code";
 export const WELCOME_SUBJECT = "Welcome to the ACE client portal";
+export const INVOICE_SUBJECT = "Your ACE invoice";
+export const INVOICES_SUBJECT = "Your ACE invoices";
 
 export function escapeHtml(value: string): string {
   return value
@@ -57,4 +60,68 @@ export function welcomeEmail(input: { to: string; name: string; signInUrl: strin
       `<p style="margin:0;color:#6b6457">Enter this email address and we will email you a short code. There is no password.</p>`,
   );
   return { to: input.to, subject: WELCOME_SUBJECT, text, html };
+}
+
+export type InvoiceEmailItem = {
+  reference: string;
+  forName: string | null;
+  amountLabel: string;
+  dueDateLabel: string;
+};
+
+/** One email for one or more invoices of the same payer. The PDFs are attached by the caller. */
+export function invoiceEmail(input: {
+  to: string;
+  invoices: readonly InvoiceEmailItem[];
+  paymentReference: string;
+  bank: {
+    bankName: string;
+    accountHolder: string;
+    accountNumber: string;
+    branchCode: string;
+    accountType: string;
+  } | null;
+}): EmailMessage {
+  const many = input.invoices.length > 1;
+  const intro = many
+    ? `Please find your ${input.invoices.length} invoices from ACE Garden Services attached.`
+    : "Please find your invoice from ACE Garden Services attached.";
+  const line = (i: InvoiceEmailItem) =>
+    `${i.reference}${i.forName ? ` (${i.forName})` : ""}: ${i.amountLabel}, due ${i.dueDateLabel}`;
+  const bankLines = input.bank
+    ? [
+        `Bank: ${input.bank.bankName}`,
+        `Account holder: ${input.bank.accountHolder}`,
+        `Account number: ${input.bank.accountNumber}`,
+        `Branch code: ${input.bank.branchCode}`,
+        ...(input.bank.accountType ? [`Account type: ${input.bank.accountType}`] : []),
+      ]
+    : [];
+  const text = [
+    "Hello,",
+    "",
+    intro,
+    "",
+    ...input.invoices.map(line),
+    "",
+    `Please pay by EFT and use this payment reference: ${input.paymentReference}`,
+    ...bankLines,
+    "",
+    NOT_VAT_REGISTERED,
+    "",
+    "ACE Garden Services",
+  ].join("\n");
+  const html = wrap(
+    `<p style="margin:0 0 12px">Hello,</p>` +
+      `<p style="margin:0 0 12px">${escapeHtml(intro)}</p>` +
+      `<ul style="margin:0 0 16px;padding-left:20px">${input.invoices
+        .map((i) => `<li>${escapeHtml(line(i))}</li>`)
+        .join("")}</ul>` +
+      `<p style="margin:0 0 8px">Please pay by EFT and use this payment reference: <strong>${escapeHtml(input.paymentReference)}</strong></p>` +
+      (bankLines.length > 0
+        ? `<p style="margin:0 0 16px">${bankLines.map((l) => escapeHtml(l)).join("<br>")}</p>`
+        : "") +
+      `<p style="margin:0;color:#6b6457">${escapeHtml(NOT_VAT_REGISTERED)}</p>`,
+  );
+  return { to: input.to, subject: many ? INVOICES_SUBJECT : INVOICE_SUBJECT, text, html };
 }

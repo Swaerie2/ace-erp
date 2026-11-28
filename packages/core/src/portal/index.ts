@@ -44,3 +44,4 @@ export {
   type PortalQuoteSummary,
 } from "./home";
 export { grantPortalAccess, type InviteDeps, type TxRunner } from "./access";
+export { getLogoForClientPdf, getLogoVersionForClient } from "./logo";

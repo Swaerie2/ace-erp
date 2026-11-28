@@ -104,6 +104,18 @@ describe("buildQuoteDocument", () => {
       "All amounts in ZAR. ACE Garden Services is not VAT registered, no VAT is charged.",
     );
   });
+  it("shows the frozen company address, and null for a quote issued before addresses existed", () => {
+    expect(buildQuoteDocument(input()).business.address).toBeNull();
+    const lines = input().lines;
+    const withAddress = snapshotWording(DEFAULT_WORDING, lines, {
+      ...org,
+      addressLine1: "1 ZZ Test Road",
+      addressCity: "Testcity",
+    });
+    expect(buildQuoteDocument(input({ wording: withAddress })).business.address).toBe(
+      "1 ZZ Test Road, Testcity",
+    );
+  });
   it("uses the reference or says Draft", () => {
     expect(buildQuoteDocument(input()).reference).toBe("QUO-2026-0104");
     expect(buildQuoteDocument(input({ reference: null, status: "DRAFT" })).reference).toBe("Draft");
