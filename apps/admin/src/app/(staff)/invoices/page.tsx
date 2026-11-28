@@ -1,6 +1,6 @@
 import {
   currentMonthSA,
-  DRAFT_WARNING_LABELS,
+  draftWarningText,
   formatCustomerNumber,
   formatDateSA,
   formatMonthLabel,
@@ -11,6 +11,7 @@ import {
   invoiceSettingsStatus,
   listDraftsForReview,
   listInvoices,
+  listStartMonthCandidates,
 } from "@ace/core";
 import Link from "next/link";
 import { inputClass } from "@/components/auth-card";
@@ -19,7 +20,7 @@ import { Notice, noticeFor, type NoticeText } from "@/components/notice";
 import { toActor } from "@/lib/actor";
 import { requireStaff } from "@/lib/auth";
 import { first, nonNegativeInt, positiveInt } from "@/lib/search-params";
-import { issueAllAction, runMonthAction } from "./actions";
+import { issueAllAction, runMonthAction, startMonthAction } from "./actions";
 import { PendingButton } from "./pending-button";
 import { InvoiceStatusBadge } from "./status-badge";
 
@@ -40,6 +41,8 @@ type Search = {
   failed?: Param;
   issued?: Param;
   remaining?: Param;
+  part?: Param;
+  partFailed?: Param;
 };
 
 /** Must match ISSUE_BATCH in ./actions (one press of "Issue all" works through at most this many). */
@@ -73,11 +76,27 @@ function pageNotice(sp: Search): NoticeText | null {
   const n = (p: Param) => nonNegativeInt(p) ?? 0;
   if (code === "run") {
     const failed = n(sp.failed);
+    const part = n(sp.part);
+    const partFailed = n(sp.partFailed);
     return {
       text:
-        `Created ${plural(n(sp.created), "draft")}. Skipped ${plural(n(sp.skipped), "customer")} (already invoiced for that month, not started yet, nothing to bill, paused, archived or still a lead).` +
+        `Created ${plural(n(sp.created), "draft")} and ${plural(part, "part-month draft")} (for clients who accepted after the run for their first month). Skipped ${plural(n(sp.skipped), "customer")} (already invoiced for that month, not started yet, nothing to bill, paused, archived or still a lead).` +
         (failed > 0
           ? ` ${plural(failed, "customer")} could not be drafted: press the button again to retry.`
+          : "") +
+        (partFailed > 0
+          ? ` Some part-month drafts could not be created: press "Create part-month invoices" to retry.`
+          : ""),
+      ok: failed === 0 && partFailed === 0,
+    };
+  }
+  if (code === "part-month") {
+    const failed = n(sp.failed);
+    return {
+      text:
+        `Created ${plural(n(sp.created), "part-month draft")}. Check each one below, then issue it.` +
+        (failed > 0
+          ? ` ${plural(failed, "client")} could not be drafted: press the button again to retry.`
           : ""),
       ok: failed === 0,
     };
@@ -108,10 +127,11 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
   const q = (first(sp.q) ?? "").trim().slice(0, 100);
   const status = INVOICE_FILTERS.find((f) => f === first(sp.status));
   const page = positiveInt(sp.page, 10_000) ?? 1;
-  const [settings, drafts, result] = await Promise.all([
+  const [settings, drafts, result, partMonth] = await Promise.all([
     invoiceSettingsStatus(db, actor),
     listDraftsForReview(db, actor),
     listInvoices(db, actor, { q, status, page }),
+    listStartMonthCandidates(db, actor),
   ]);
   const pages = Math.max(1, Math.ceil(result.total / result.pageSize));
   const link = (over: { status?: string | undefined; page?: number }) => {
@@ -148,6 +168,57 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
             "Ask the owner to enter them in Invoice settings."
           )}
         </p>
+      ) : null}
+
+      {partMonth.length > 0 ? (
+        <section
+          aria-labelledby="part-month-heading"
+          className="space-y-3 rounded-2xl bg-ochre/10 p-4 ring-1 ring-ochre/40"
+        >
+          <h2 id="part-month-heading" className="font-display text-lg font-semibold text-forest">
+            {partMonth.length === 1
+              ? "1 client needs a part-month invoice"
+              : `${partMonth.length} clients need a part-month invoice`}
+          </h2>
+          <p className="text-sm text-charcoal">
+            These clients accepted after the regular invoice run for their first month, so their
+            first days would not be billed. The invoice is a draft: check it, then issue it.
+          </p>
+          <ul className="divide-y divide-charcoal/10 rounded-xl bg-white/80 ring-1 ring-charcoal/10">
+            {partMonth.map((c) => (
+              <li
+                key={`${c.customerId}:${c.serviceMonth}`}
+                className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-3"
+              >
+                <span className="min-w-0 break-words">
+                  <Link
+                    href={`/customers/${c.customerId}?tab=invoices`}
+                    className="font-semibold text-forest hover:underline"
+                  >
+                    {c.customerName}
+                  </Link>{" "}
+                  <span className="text-xs text-charcoal/50">
+                    {formatCustomerNumber(c.customerNumber)}
+                  </span>
+                  <span className="block text-sm text-charcoal/60">
+                    {`${c.propertyLabel}, first service ${day(c.firstServiceOn)}, for ${formatMonthLabel(c.serviceMonth)}`}
+                  </span>
+                </span>
+                <span className="font-semibold">about {formatZAR(c.amountPreviewCents)}</span>
+              </li>
+            ))}
+          </ul>
+          <form action={startMonthAction}>
+            {[...new Set(partMonth.map((c) => c.customerId))].map((id) => (
+              <input key={id} type="hidden" name="customerId" value={id} />
+            ))}
+            <PendingButton
+              label="Create part-month invoices"
+              pendingLabel="Creating..."
+              className={primaryLinkClass}
+            />
+          </form>
+        </section>
       ) : null}
 
       <section
@@ -222,7 +293,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
                             key={w}
                             className="rounded-full bg-ochre/15 px-2 py-0.5 text-xs font-semibold text-ochre"
                           >
-                            {DRAFT_WARNING_LABELS[w]}
+                            {draftWarningText(w, d)}
                           </span>
                         ))}
                       </span>

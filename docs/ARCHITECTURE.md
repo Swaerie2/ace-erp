@@ -440,6 +440,19 @@ These apply to every module. A module is not finished until it follows all of th
   invoice with a balance and no fee yet gets a suggested late payment fee line (amount in settings, 0
   switches it off). Running it twice makes no duplicates (a partial unique index guards it). It is one
   function, so a later automatic switch can call it.
+- **Start-month catch-up (part-month invoices).** The run bills Pre clients a month ahead, so a client whose
+  first agreement starts in a month whose run has already been (Pre: the 20th of the month before; Post:
+  the 20th of the month) would never be billed for those first days. `catchup.ts` finds these clients
+  (only a property's first agreement, starting this month or last month: older months are never caught
+  up) that have no live monthly invoice for that month, and makes a DRAFT for that month with the lines
+  the run would build (the part month charged by days, no late fees). It is due a week from today or on
+  the normal due date if later, never more than a week after that month ends and never before today. It
+  happens when staff record an acceptance in the staff app (after the acceptance has committed; a failure
+  never undoes the acceptance), from the box "N clients need a part-month invoice" on the Invoices page
+  (for clients who accepted in the portal or on the client link), and after every "Create this month's
+  invoices". The portal never creates invoices: its database login has no rights on the invoice tables.
+  A monthly draft whose month before has no live invoice (for example after a switch from Post to Pre)
+  carries the warning "No invoice exists for <month>".
 - **Issue.** Gives the number `INV-<year>-<0001>` from an atomic yearly counter, freezes the recipient (the
   bill-to customer: the agency when the complex's bills go to it), ACE's bank and company details
   (including the address) and the total, and stores a fingerprint (`contentHash`). "Issue all drafts" does
@@ -480,8 +493,10 @@ These apply to every module. A module is not finished until it follows all of th
 - Only void-and-reissue corrects an issued invoice; there are no credit notes.
 - The run skips a client who is paused when it runs but cannot know about a pause part way through the
   month; the owner reviews the drafts.
-- A Pre client whose service started before the first service month is not charged for that earlier part
-  month automatically: the "First month" warning on the draft says to check it.
+- A first month whose run had already been is caught up only for this month and last month (see Start-month
+  catch-up); an older one is not charged automatically. A new property added for a client who already has
+  that month's invoice is not caught up either (one monthly invoice per month): add its part month to the
+  next draft by hand.
 - The late fee suggestion on a draft looks at the overdue invoices of the customer being invoiced (the
   complex), not at everything its agency owes. The owner reviews the fee line.
 - Statements are on demand only and are not emailed; credit on account is shown but never refunded or
@@ -498,7 +513,6 @@ These apply to every module. A module is not finished until it follows all of th
 - Emails are sent one after the other inside `after()`, so a very large batch could outlast the hosting
   time limit; this is why Issue all stops at 50 per press. The invoice page shows whether an invoice was
   emailed, and Resend email sends it again.
-- The "How to pay" bank block still prints on void and paid invoices.
 
 ### Before real customer data goes in
 

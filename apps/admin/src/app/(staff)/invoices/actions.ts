@@ -5,6 +5,7 @@ import {
   checkInvoiceEmailable,
   createMonthlyDrafts,
   createOnceOffDraft,
+  createStartMonthDrafts,
   deleteInvoiceDraft,
   dismissPaymentReport,
   DomainError,
@@ -22,8 +23,10 @@ import {
   saveInvoiceDraft,
   setBillingTiming,
   voidInvoice,
+  type Actor,
   type IssueAllResult,
   type RunResult,
+  type StartMonthResult,
 } from "@ace/core";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -40,6 +43,8 @@ const BAD_REQUEST = "Something went wrong. Refresh the page and try again.";
 const ISSUE_BATCH = 50;
 /** More ids than the review list can show (500) are never read. */
 const MAX_POSTED_IDS = 500;
+/** The part-month box lists at most 200 clients. */
+const MAX_PART_MONTH_IDS = 200;
 
 /**
  * For buttons that cannot show an error themselves: a refused role goes to /forbidden, a refusal the user can
@@ -81,7 +86,29 @@ export async function setBillingTimingAction(formData: FormData): Promise<void> 
   redirect(`/customers/${id.data}?tab=invoices&notice=${code}`);
 }
 
-/** "Create this month's invoices": drafts only, each customer in its own transaction. */
+/**
+ * Part-month drafts for clients whose first month no run can bill. Never throws: a refused role still goes to
+ * /forbidden, anything else counts as one failure (fixed words in the log, nothing else).
+ */
+async function startMonthDrafts(
+  actor: Actor,
+  only?: string[],
+): Promise<{ created: number; failed: number }> {
+  let result: StartMonthResult;
+  try {
+    result = await createStartMonthDrafts(getDb(), actor, { run: inTx, ...(only ? { only } : {}) });
+  } catch (error) {
+    if (error instanceof ForbiddenError) redirect("/forbidden");
+    console.error("Part-month invoice drafts could not be created.");
+    return { created: 0, failed: 1 };
+  }
+  return { created: result.created.length, failed: result.failed };
+}
+
+/**
+ * "Create this month's invoices": drafts only, each customer in its own transaction. Then the part-month
+ * drafts for clients who accepted after the run for their first month (the run itself is unchanged).
+ */
 export async function runMonthAction(formData: FormData): Promise<void> {
   const staff = await requireStaff(MANAGEMENT);
   const actor = await toActor(staff);
@@ -93,10 +120,31 @@ export async function runMonthAction(formData: FormData): Promise<void> {
   } catch (error) {
     redirect(`/invoices?notice=${codeFor(error)}`);
   }
+  const part = await startMonthDrafts(actor);
   const failed = result.skipped.filter((s) => s.reason === "failed").length;
   redirect(
-    `/invoices?notice=run&created=${result.created.length}&skipped=${result.skipped.length - failed}&failed=${failed}`,
+    `/invoices?notice=run&created=${result.created.length}&skipped=${result.skipped.length - failed}&failed=${failed}&part=${part.created}&partFailed=${part.failed}`,
   );
+}
+
+/** "Create part-month invoices": the clients the box on the Invoices page listed (posted as `customerId`). */
+export async function startMonthAction(formData: FormData): Promise<void> {
+  const staff = await requireStaff(MANAGEMENT);
+  const actor = await toActor(staff);
+  const ids = [
+    ...new Set(
+      formData
+        .getAll("customerId")
+        .slice(0, MAX_PART_MONTH_IDS)
+        .flatMap((v) => {
+          const id = idSchema.safeParse(v);
+          return id.success ? [id.data.toLowerCase()] : [];
+        }),
+    ),
+  ];
+  if (ids.length === 0) redirect("/invoices");
+  const part = await startMonthDrafts(actor, ids);
+  redirect(`/invoices?notice=part-month&created=${part.created}&failed=${part.failed}`);
 }
 
 /**

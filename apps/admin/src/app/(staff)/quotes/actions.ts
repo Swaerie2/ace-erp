@@ -7,6 +7,7 @@ import {
   createCustomer,
   createQuote,
   createQuoteLink,
+  createStartMonthDrafts,
   customerSchema,
   declineQuote,
   declineSchema,
@@ -14,6 +15,8 @@ import {
   DraftConflictError,
   draftSchema,
   findDuplicateContacts,
+  getDb,
+  getQuote,
   inTx,
   issueQuote,
   MANAGEMENT,
@@ -25,6 +28,7 @@ import {
   saveDraft,
   SENT_METHODS,
   withdrawQuote,
+  type Actor,
 } from "@ace/core";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -234,7 +238,29 @@ export async function acceptQuoteAction(_prev: FormState, formData: FormData): P
   }
   // The acceptance has committed: portal access and the welcome emails follow after the response.
   grantPortalAccessLater(id.data);
-  redirect(flag ? `/quotes/${id.data}?notice=${flag.toLowerCase()}` : `/quotes/${id.data}`);
+  if (flag) redirect(`/quotes/${id.data}?notice=${flag.toLowerCase()}`);
+  const partMonth = await partMonthDraftAfterAcceptance(actor, id.data);
+  redirect(partMonth ? `/quotes/${id.data}?notice=part-month` : `/quotes/${id.data}`);
+}
+
+/**
+ * After an acceptance has committed (outside its transaction): a part-month invoice draft for the customer
+ * when the run for the first month has already been, so those first days are billed. It can never fail the
+ * acceptance: any problem is logged with fixed words only. True when a draft was created.
+ */
+async function partMonthDraftAfterAcceptance(actor: Actor, quoteId: string): Promise<boolean> {
+  try {
+    const quote = await getQuote(getDb(), actor, quoteId);
+    if (!quote) return false;
+    const result = await createStartMonthDrafts(getDb(), actor, {
+      run: inTx,
+      only: [quote.customerId],
+    });
+    return result.created.length > 0;
+  } catch {
+    console.error("A part-month invoice draft could not be made after an acceptance.");
+    return false;
+  }
 }
 
 export async function declineQuoteAction(_prev: FormState, formData: FormData): Promise<FormState> {
